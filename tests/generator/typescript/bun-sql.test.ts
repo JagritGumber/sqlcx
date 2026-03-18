@@ -141,7 +141,7 @@ describe("Bun.sql Driver Generator", () => {
     expect(fn).toContain("export interface GetUserParams");
   });
 
-  test("SQL uses single quotes to avoid backtick issues", () => {
+  test("SQL uses JSON.stringify for safe embedding", () => {
     const query: QueryDef = {
       name: "Simple",
       command: "exec",
@@ -151,7 +151,29 @@ describe("Bun.sql Driver Generator", () => {
       sourceFile: "queries/users.sql",
     };
     const fn = generator.generateQueryFunction(query);
-    expect(fn).toContain("const simpleSql = '");
-    expect(fn).not.toContain("`");
+    expect(fn).toContain('const simpleSql = "DELETE FROM users"');
+  });
+
+  test("multi-line SQL is properly escaped", () => {
+    const query: QueryDef = {
+      name: "GetActiveUsers",
+      command: "many",
+      sql: "SELECT *\nFROM users\nWHERE status = 'active'",
+      params: [],
+      returns: [
+        { name: "id", type: { raw: "SERIAL", normalized: "serial", category: "number" }, nullable: false, hasDefault: true },
+      ],
+      sourceFile: "queries/users.sql",
+    };
+    const fn = generator.generateQueryFunction(query);
+    // Should use escaped newlines, not literal newlines
+    expect(fn).toContain("\\n");
+    // Should handle single quotes inside SQL
+    expect(fn).toContain("active");
+    // The const line should be valid JS (no unescaped newlines)
+    const sqlLine = fn.split("\n").find((l: string) => l.includes("getActiveUsersSql"));
+    expect(sqlLine).toBeDefined();
+    // Should not contain a literal unescaped newline within the string
+    expect(sqlLine).not.toMatch(/= ".*\n/);
   });
 });

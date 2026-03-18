@@ -73,10 +73,14 @@ export function createBunSqlGenerator(): DriverGenerator {
     },
 
     generateClientAdapter(): string {
-      return `export class BunSqlClient implements DatabaseClient {
-  private sql: any;
+      return `interface BunSqlDriver {
+  unsafe(query: string, values?: unknown[]): Promise<any[] & { count: number }>;
+}
 
-  constructor(sql: any) {
+export class BunSqlClient implements DatabaseClient {
+  private sql: BunSqlDriver;
+
+  constructor(sql: BunSqlDriver) {
     this.sql = sql;
   }
 
@@ -92,7 +96,7 @@ export function createBunSqlGenerator(): DriverGenerator {
 
   async execute(text: string, values?: unknown[]): Promise<{ rowsAffected: number }> {
     const result = await this.sql.unsafe(text, values);
-    return { rowsAffected: result.length ?? 0 };
+    return { rowsAffected: result.count };
   }
 }`;
     },
@@ -103,8 +107,8 @@ export function createBunSqlGenerator(): DriverGenerator {
       const hasParams = query.params.length > 0;
       const paramsInterface = generateParamsType(query);
       const paramsTypeName = `${toPascal(query.name)}Params`;
-      // Use single quotes to avoid backtick escaping issues with SQL
-      const sqlConst = `const ${fnName}Sql = '${query.sql.replace(/'/g, "\\'")}';`;
+      // JSON.stringify handles newlines, quotes, backslashes safely
+      const sqlConst = `const ${fnName}Sql = ${JSON.stringify(query.sql)};`;
 
       const paramsSig = hasParams ? `, params: ${paramsTypeName}` : "";
       const valuesArg = hasParams

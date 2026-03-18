@@ -2,13 +2,14 @@ import type { SchemaGenerator } from "@/generator/interface";
 import type { SqlcxIR, TableDef, EnumDef, SqlType, ColumnDef } from "@/ir";
 import { pascalCase } from "@/utils";
 
+/** Safely escape a string for embedding in generated JS/TS double-quoted literals */
 function escapeString(str: string): string {
-  return str.replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/\n/g, "\\n");
+  return JSON.stringify(str).slice(1, -1); // strip outer quotes from JSON.stringify
 }
 
-function typeBoxType(type: SqlType, ir: SqlcxIR): string {
+function typeBoxType(type: SqlType): string {
   if (type.elementType) {
-    return `Type.Array(${typeBoxType(type.elementType, ir)})`;
+    return `Type.Array(${typeBoxType(type.elementType)})`;
   }
 
   switch (type.category) {
@@ -27,7 +28,6 @@ function typeBoxType(type: SqlType, ir: SqlcxIR): string {
     case "binary":
       return "Type.Uint8Array()";
     case "enum": {
-      // Reference the named enum schema variable instead of inlining
       if (type.enumName) {
         return pascalCase(type.enumName);
       }
@@ -35,21 +35,24 @@ function typeBoxType(type: SqlType, ir: SqlcxIR): string {
     }
     case "unknown":
       return "Type.Unknown()";
+    default: {
+      const _exhaustive: never = type.category;
+      return _exhaustive;
+    }
   }
 }
 
-function selectColumn(col: ColumnDef, ir: SqlcxIR): string {
-  const base = typeBoxType(col.type, ir);
+function selectColumn(col: ColumnDef): string {
+  const base = typeBoxType(col.type);
   if (col.nullable) {
     return `Type.Union([${base}, Type.Null()])`;
   }
   return base;
 }
 
-function insertColumn(col: ColumnDef, ir: SqlcxIR): string {
-  const base = typeBoxType(col.type, ir);
+function insertColumn(col: ColumnDef): string {
+  const base = typeBoxType(col.type);
   if (col.hasDefault) {
-    // Columns with defaults are optional in inserts (user can override or omit)
     if (col.nullable) {
       return `Type.Optional(Type.Union([${base}, Type.Null()]))`;
     }
@@ -63,11 +66,10 @@ function insertColumn(col: ColumnDef, ir: SqlcxIR): string {
 
 function objectBody(
   columns: ColumnDef[],
-  mapper: (col: ColumnDef, ir: SqlcxIR) => string,
-  ir: SqlcxIR,
+  mapper: (col: ColumnDef) => string,
 ): string {
   const fields = columns
-    .map((col) => `  "${escapeString(col.name)}": ${mapper(col, ir)}`)
+    .map((col) => `  "${escapeString(col.name)}": ${mapper(col)}`)
     .join(",\n");
   return `{\n${fields}\n}`;
 }
@@ -77,7 +79,7 @@ export function createTypeBoxGenerator(): SchemaGenerator {
     name: "typebox",
 
     generateImports(): string {
-      return `import { Type, type Static } from "@sinclair/typebox";\n\ntype Prettify<T> = { [K in keyof T]: T[K] } & {};`;
+      return `import { Type, type Static } from "@sinclair/typebox";\n\n// Requires @sinclair/typebox >= 0.31.0 (for Type.Date and Type.Uint8Array)\n\ntype Prettify<T> = { [K in keyof T]: T[K] } & {};`;
     },
 
     generateEnumSchema(enumDef: EnumDef): string {
@@ -88,16 +90,15 @@ export function createTypeBoxGenerator(): SchemaGenerator {
       return `export const ${name} = Type.Union([${literals}]);`;
     },
 
-    generateSelectSchema(table: TableDef, ir: SqlcxIR): string {
+    generateSelectSchema(table: TableDef, _ir: SqlcxIR): string {
       const name = `Select${pascalCase(table.name)}`;
-      const body = objectBody(table.columns, selectColumn, ir);
+      const body = objectBody(table.columns, selectColumn);
       return `export const ${name} = Type.Object(${body});`;
     },
 
-    generateInsertSchema(table: TableDef, ir: SqlcxIR): string {
+    generateInsertSchema(table: TableDef, _ir: SqlcxIR): string {
       const name = `Insert${pascalCase(table.name)}`;
-      // Include ALL columns — those with defaults are wrapped in Type.Optional()
-      const body = objectBody(table.columns, insertColumn, ir);
+      const body = objectBody(table.columns, insertColumn);
       return `export const ${name} = Type.Object(${body});`;
     },
 

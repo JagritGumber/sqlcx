@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import type { SqlcxIR, TableDef, SqlType } from "@/ir";
+import type { SqlcxIR, SqlType } from "@/ir";
 
 describe("IR types", () => {
   test("SqlcxIR is JSON-serializable", () => {

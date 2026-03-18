@@ -1,0 +1,95 @@
+import { describe, expect, test } from "bun:test";
+import { createBunSqlGenerator } from "@/generator/typescript/driver/bun-sql";
+import type { QueryDef } from "@/ir";
+
+const generator = createBunSqlGenerator();
+
+describe("Bun.sql Driver Generator", () => {
+  test("generates client adapter", () => {
+    const adapter = generator.generateClientAdapter();
+    expect(adapter).toContain("BunSqlClient");
+    expect(adapter).toContain("DatabaseClient");
+  });
+
+  test("generates :one query function", () => {
+    const query: QueryDef = {
+      name: "GetUser",
+      command: "one",
+      sql: "SELECT * FROM users WHERE id = $1",
+      params: [{ index: 1, name: "id", type: { raw: "INTEGER", normalized: "integer", category: "number" } }],
+      returns: [
+        { name: "id", type: { raw: "SERIAL", normalized: "serial", category: "number" }, nullable: false, hasDefault: true },
+        { name: "name", type: { raw: "TEXT", normalized: "text", category: "string" }, nullable: false, hasDefault: false },
+      ],
+      sourceFile: "queries/users.sql",
+    };
+    const fn = generator.generateQueryFunction(query);
+    expect(fn).toContain("getUser");
+    expect(fn).toContain("| null");
+    expect(fn).toContain("queryOne");
+    expect(fn).toContain("params.id");
+  });
+
+  test("generates :many query function", () => {
+    const query: QueryDef = {
+      name: "ListUsers",
+      command: "many",
+      sql: "SELECT id, name FROM users",
+      params: [],
+      returns: [
+        { name: "id", type: { raw: "SERIAL", normalized: "serial", category: "number" }, nullable: false, hasDefault: true },
+        { name: "name", type: { raw: "TEXT", normalized: "text", category: "string" }, nullable: false, hasDefault: false },
+      ],
+      sourceFile: "queries/users.sql",
+    };
+    const fn = generator.generateQueryFunction(query);
+    expect(fn).toContain("listUsers");
+    expect(fn).toContain("[]");
+    expect(fn).toContain("client.query");
+  });
+
+  test("generates :exec query function with void return", () => {
+    const query: QueryDef = {
+      name: "CreateUser",
+      command: "exec",
+      sql: "INSERT INTO users (name) VALUES ($1)",
+      params: [{ index: 1, name: "name", type: { raw: "TEXT", normalized: "text", category: "string" } }],
+      returns: [],
+      sourceFile: "queries/users.sql",
+    };
+    const fn = generator.generateQueryFunction(query);
+    expect(fn).toContain("createUser");
+    expect(fn).toContain("Promise<void>");
+    expect(fn).toContain("client.execute");
+  });
+
+  test("generates :execresult query function", () => {
+    const query: QueryDef = {
+      name: "DeleteUser",
+      command: "execresult",
+      sql: "DELETE FROM users WHERE id = $1",
+      params: [{ index: 1, name: "id", type: { raw: "INTEGER", normalized: "integer", category: "number" } }],
+      returns: [],
+      sourceFile: "queries/users.sql",
+    };
+    const fn = generator.generateQueryFunction(query);
+    expect(fn).toContain("deleteUser");
+    expect(fn).toContain("rowsAffected");
+  });
+
+  test("generates no-param function without params argument", () => {
+    const query: QueryDef = {
+      name: "CountUsers",
+      command: "one",
+      sql: "SELECT COUNT(*) as count FROM users",
+      params: [],
+      returns: [
+        { name: "count", type: { raw: "BIGINT", normalized: "bigint", category: "number" }, nullable: false, hasDefault: false },
+      ],
+      sourceFile: "queries/users.sql",
+    };
+    const fn = generator.generateQueryFunction(query);
+    expect(fn).toContain("countUsers");
+    expect(fn).not.toContain("params:");
+  });
+});

@@ -1,0 +1,9 @@
+node_modules/
+dist/
+.sqlcx/
+*.tsbuildinfo
+.env
+.env.*
+
+# Plans
+docs/superpowers/specs/

@@ -90,6 +90,68 @@ describe("Bun.sql Driver Generator", () => {
     };
     const fn = generator.generateQueryFunction(query);
     expect(fn).toContain("countUsers");
-    expect(fn).not.toContain("params:");
+    expect(fn).not.toContain("Params");
+  });
+
+  test("array columns generate array TypeScript type", () => {
+    const query: QueryDef = {
+      name: "GetUserTags",
+      command: "one",
+      sql: "SELECT tags FROM users WHERE id = $1",
+      params: [{ index: 1, name: "id", type: { raw: "INTEGER", normalized: "integer", category: "number" } }],
+      returns: [
+        { name: "tags", type: { raw: "TEXT[]", normalized: "text[]", category: "string", elementType: { raw: "TEXT", normalized: "text", category: "string" } }, nullable: true, hasDefault: false },
+      ],
+      sourceFile: "queries/users.sql",
+    };
+    const fn = generator.generateQueryFunction(query);
+    expect(fn).toContain("string[]");
+  });
+
+  test("aliased columns use alias as field name", () => {
+    const query: QueryDef = {
+      name: "GetUserAlias",
+      command: "one",
+      sql: "SELECT id AS user_id FROM users WHERE id = $1",
+      params: [{ index: 1, name: "id", type: { raw: "INTEGER", normalized: "integer", category: "number" } }],
+      returns: [
+        { name: "id", alias: "user_id", type: { raw: "SERIAL", normalized: "serial", category: "number" }, nullable: false, hasDefault: true },
+      ],
+      sourceFile: "queries/users.sql",
+    };
+    const fn = generator.generateQueryFunction(query);
+    expect(fn).toContain("user_id: number");
+    // Row type should use alias, not original name
+    expect(fn).toMatch(/interface GetUserAliasRow \{[^}]*user_id: number/);
+  });
+
+  test("row type and params type are exported", () => {
+    const query: QueryDef = {
+      name: "GetUser",
+      command: "one",
+      sql: "SELECT * FROM users WHERE id = $1",
+      params: [{ index: 1, name: "id", type: { raw: "INTEGER", normalized: "integer", category: "number" } }],
+      returns: [
+        { name: "id", type: { raw: "SERIAL", normalized: "serial", category: "number" }, nullable: false, hasDefault: true },
+      ],
+      sourceFile: "queries/users.sql",
+    };
+    const fn = generator.generateQueryFunction(query);
+    expect(fn).toContain("export interface GetUserRow");
+    expect(fn).toContain("export interface GetUserParams");
+  });
+
+  test("SQL uses single quotes to avoid backtick issues", () => {
+    const query: QueryDef = {
+      name: "Simple",
+      command: "exec",
+      sql: "DELETE FROM users",
+      params: [],
+      returns: [],
+      sourceFile: "queries/users.sql",
+    };
+    const fn = generator.generateQueryFunction(query);
+    expect(fn).toContain("const simpleSql = '");
+    expect(fn).not.toContain("`");
   });
 });

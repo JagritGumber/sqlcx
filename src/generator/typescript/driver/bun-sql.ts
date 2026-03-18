@@ -1,5 +1,5 @@
 import type { DriverGenerator } from "@/generator/interface";
-import type { QueryDef, SqlTypeCategory } from "@/ir";
+import type { QueryDef, SqlType, SqlTypeCategory } from "@/ir";
 import { camelCase, pascalCase } from "@/utils";
 
 /** Split PascalCase/camelCase into words before applying case utils */
@@ -15,8 +15,13 @@ function toPascal(str: string): string {
   return pascalCase(splitWords(str));
 }
 
-function tsType(category: SqlTypeCategory): string {
-  switch (category) {
+function tsType(type: SqlType): string {
+  // Handle arrays
+  if (type.elementType) {
+    return `${tsType(type.elementType)}[]`;
+  }
+
+  switch (type.category) {
     case "string":
     case "uuid":
     case "enum":
@@ -41,20 +46,22 @@ function generateRowType(query: QueryDef): string {
   const typeName = `${toPascal(query.name)}Row`;
   const fields = query.returns
     .map((col) => {
-      const type = tsType(col.type.category);
+      const fieldName = col.alias ?? col.name;
+      const type = tsType(col.type);
       const nullable = col.nullable ? " | null" : "";
-      return `  ${col.name}: ${type}${nullable};`;
+      return `  ${fieldName}: ${type}${nullable};`;
     })
     .join("\n");
-  return `interface ${typeName} {\n${fields}\n}`;
+  return `export interface ${typeName} {\n${fields}\n}`;
 }
 
 function generateParamsType(query: QueryDef): string {
   if (query.params.length === 0) return "";
+  const typeName = `${toPascal(query.name)}Params`;
   const fields = query.params
-    .map((p) => `  ${p.name}: ${tsType(p.type.category)};`)
+    .map((p) => `  ${p.name}: ${tsType(p.type)};`)
     .join("\n");
-  return `{\n${fields}\n}`;
+  return `export interface ${typeName} {\n${fields}\n}`;
 }
 
 export function createBunSqlGenerator(): DriverGenerator {
@@ -75,7 +82,7 @@ export function createBunSqlGenerator(): DriverGenerator {
 
   async query<T>(text: string, values?: unknown[]): Promise<T[]> {
     const result = await this.sql.unsafe(text, values);
-    return result as T[];
+    return [...result] as T[];
   }
 
   async queryOne<T>(text: string, values?: unknown[]): Promise<T | null> {
@@ -85,7 +92,7 @@ export function createBunSqlGenerator(): DriverGenerator {
 
   async execute(text: string, values?: unknown[]): Promise<{ rowsAffected: number }> {
     const result = await this.sql.unsafe(text, values);
-    return { rowsAffected: result.count ?? 0 };
+    return { rowsAffected: result.length ?? 0 };
   }
 }`;
     },
@@ -94,10 +101,12 @@ export function createBunSqlGenerator(): DriverGenerator {
       const fnName = toCamel(query.name);
       const rowType = generateRowType(query);
       const hasParams = query.params.length > 0;
-      const paramsType = generateParamsType(query);
-      const sqlConst = `const ${fnName}Sql = \`${query.sql}\`;`;
+      const paramsInterface = generateParamsType(query);
+      const paramsTypeName = `${toPascal(query.name)}Params`;
+      // Use single quotes to avoid backtick escaping issues with SQL
+      const sqlConst = `const ${fnName}Sql = '${query.sql.replace(/'/g, "\\'")}';`;
 
-      const paramsSig = hasParams ? `, params: ${paramsType}` : "";
+      const paramsSig = hasParams ? `, params: ${paramsTypeName}` : "";
       const valuesArg = hasParams
         ? `[${query.params.map((p) => `params.${p.name}`).join(", ")}]`
         : "[]";
@@ -132,6 +141,7 @@ export function createBunSqlGenerator(): DriverGenerator {
 
       const parts: string[] = [];
       if (rowType) parts.push(rowType);
+      if (paramsInterface) parts.push(paramsInterface);
       parts.push(sqlConst);
       parts.push(
         `export async function ${fnName}(client: DatabaseClient${paramsSig}): ${returnType} {\n${body}\n}`

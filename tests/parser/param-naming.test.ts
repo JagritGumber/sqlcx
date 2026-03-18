@@ -48,4 +48,22 @@ describe("resolveParamNames", () => {
     ]);
     expect(result).toEqual(["status_1", "status_2", "limit"]);
   });
+
+  test("override colliding with inferred name gets deduplicated", () => {
+    const result = resolveParamNames([
+      { index: 1, column: null, override: "name" },
+      { index: 2, column: "name" },
+    ]);
+    expect(result[0]).not.toBe(result[1]);
+  });
+
+  test("suffix colliding with literal column name gets deduplicated", () => {
+    const result = resolveParamNames([
+      { index: 1, column: "status" },
+      { index: 2, column: "status" },
+      { index: 3, column: "status_1" },
+    ]);
+    const unique = new Set(result);
+    expect(unique.size).toBe(3);
+  });
 });

@@ -15,7 +15,7 @@ export function resolveParamNames(params: RawParam[]): string[] {
 
   // Second pass: assign names with collision suffixes
   const counters = new Map<string, number>();
-  return params.map((p) => {
+  const assigned: string[] = params.map((p) => {
     if (p.override) return p.override;
     if (!p.column) return `param_${p.index}`;
 
@@ -28,4 +28,17 @@ export function resolveParamNames(params: RawParam[]): string[] {
 
     return p.column;
   });
+
+  // Third pass: detect and fix duplicates (override-vs-inferred or suffix-vs-literal)
+  const seen = new Set<string>();
+  for (let i = 0; i < assigned.length; i++) {
+    let name = assigned[i];
+    while (seen.has(name)) {
+      name = `${name}_${i + 1}`;
+    }
+    assigned[i] = name;
+    seen.add(name);
+  }
+
+  return assigned;
 }

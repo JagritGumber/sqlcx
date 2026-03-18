@@ -88,19 +88,19 @@ function resolveType(raw: string, enumNames: Set<string>): SqlType {
 // Enum parsing (regex-based)
 // ---------------------------------------------------------------------------
 
-const ENUM_RE =
-  /CREATE\s+TYPE\s+(\w+)\s+AS\s+ENUM\s*\(\s*((?:'[^']*'(?:\s*,\s*'[^']*')*)?)\s*\)/gi;
+const ENUM_RE_SOURCE =
+  /CREATE\s+TYPE\s+(\w+)\s+AS\s+ENUM\s*\(\s*((?:'[^']*'(?:\s*,\s*'[^']*')*)?)\s*\)/i.source;
 
 function parseEnumDefs(sql: string): EnumDef[] {
+  const re = new RegExp(ENUM_RE_SOURCE, "gi");
   const enums: EnumDef[] = [];
   let m: RegExpExecArray | null;
-  while ((m = ENUM_RE.exec(sql)) !== null) {
+  while ((m = re.exec(sql)) !== null) {
     const name = m[1].toLowerCase();
     const valuesRaw = m[2];
     const values = [...valuesRaw.matchAll(/'([^']*)'/g)].map((v) => v[1]);
     enums.push({ name, values });
   }
-  ENUM_RE.lastIndex = 0;
   return enums;
 }
 
@@ -108,8 +108,8 @@ function parseEnumDefs(sql: string): EnumDef[] {
 // Schema parsing (regex-based for reliability with custom types)
 // ---------------------------------------------------------------------------
 
-const CREATE_TABLE_RE =
-  /CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?(\w+)\s*\(([\s\S]*?)\)\s*;/gi;
+const CREATE_TABLE_RE_SOURCE =
+  /CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?(\w+)\s*\(([\s\S]*?)\)\s*;/i.source;
 
 /**
  * Split the CREATE TABLE body into individual column/constraint definitions.
@@ -197,10 +197,11 @@ function parseColumnLine(
 }
 
 function parseSchemaDefs(sql: string, enumNames: Set<string>): TableDef[] {
+  const re = new RegExp(CREATE_TABLE_RE_SOURCE, "gi");
   const tables: TableDef[] = [];
   let m: RegExpExecArray | null;
 
-  while ((m = CREATE_TABLE_RE.exec(sql)) !== null) {
+  while ((m = re.exec(sql)) !== null) {
     const tableName = m[1].toLowerCase();
     const body = m[2];
 
@@ -236,10 +237,17 @@ function parseSchemaDefs(sql: string, enumNames: Set<string>): TableDef[] {
       }
     }
 
+    // PK columns are implicitly NOT NULL — fix nullable for table-level PKs
+    for (const col of columns) {
+      if (primaryKey.includes(col.name)) {
+        col.nullable = false;
+        col.hasDefault = col.hasDefault || SERIAL_TYPES.has(col.type.normalized);
+      }
+    }
+
     tables.push({ name: tableName, columns, primaryKey, uniqueConstraints });
   }
 
-  CREATE_TABLE_RE.lastIndex = 0;
   return tables;
 }
 
@@ -335,12 +343,27 @@ function inferParamColumns(sql: string): Map<number, string> {
     return result;
   }
 
-  // WHERE/SET: col op $N
+  // SQL keywords that can appear before operators but aren't column names
+  const SQL_KEYWORDS = new Set([
+    "not", "and", "or", "where", "set", "when", "then", "else", "case",
+    "between", "exists", "any", "all", "some", "having",
+  ]);
+
+  // WHERE/SET: col op $N — also try to extract column from FUNC(col) op $N
   const wherePatterns =
-    /(\w+)\s*(?:=|!=|<>|<=?|>=?|(?:NOT\s+)?(?:I?LIKE|IN|IS))\s*\$(\d+)/gi;
+    /(?:(\w+)\s*\(\s*(\w+)\s*\)|(\w+))\s*(?:=|!=|<>|<=?|>=?|(?:NOT\s+)?(?:I?LIKE|IN|IS))\s*\$(\d+)/gi;
   let m: RegExpExecArray | null;
   while ((m = wherePatterns.exec(sql)) !== null) {
-    result.set(parseInt(m[2], 10), m[1].toLowerCase());
+    const paramIdx = parseInt(m[4], 10);
+    if (m[1] && m[2]) {
+      // FUNC(col) pattern — use the inner column name
+      result.set(paramIdx, m[2].toLowerCase());
+    } else if (m[3]) {
+      const word = m[3].toLowerCase();
+      if (!SQL_KEYWORDS.has(word)) {
+        result.set(paramIdx, word);
+      }
+    }
   }
 
   return result;
@@ -356,10 +379,36 @@ function findFromTable(
   return tables.find((t) => t.name === tableName);
 }
 
+function resolveReturningColumns(
+  sql: string,
+  table: TableDef | undefined,
+): ColumnDef[] | null {
+  const returningMatch = sql.match(/\bRETURNING\s+([\s\S]+?)(?:;?\s*)$/i);
+  if (!returningMatch) return null;
+
+  const colsPart = returningMatch[1].trim();
+  if (colsPart === "*") {
+    return table ? [...table.columns] : [];
+  }
+  if (!table) return [];
+
+  return colsPart.split(",").map((s) => {
+    const name = s.trim().toLowerCase();
+    const tableCol = table.columns.find((c) => c.name === name);
+    return tableCol
+      ? { ...tableCol }
+      : { name, type: { raw: "unknown", normalized: "unknown", category: "unknown" }, nullable: true, hasDefault: false };
+  });
+}
+
 function resolveReturnColumns(
   sql: string,
   table: TableDef | undefined,
 ): ColumnDef[] {
+  // Check RETURNING clause first (INSERT/UPDATE/DELETE ... RETURNING)
+  const returning = resolveReturningColumns(sql, table);
+  if (returning) return returning;
+
   if (!/^\s*SELECT\b/i.test(sql)) return [];
 
   const selectMatch = sql.match(/SELECT\s+([\s\S]+?)\s+FROM\b/i);

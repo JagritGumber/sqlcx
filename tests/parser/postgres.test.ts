@@ -134,5 +134,40 @@ describe("PostgreSQL Parser", () => {
       expect(dateRange.params[0].name).toBe("start_date");
       expect(dateRange.params[1].name).toBe("end_date");
     });
+
+    test("resolves RETURNING * columns", () => {
+      const tables = parser.parseSchema(schemaSql);
+      const returningSql = `-- name: CreateUserReturning :one\nINSERT INTO users (name, email) VALUES ($1, $2) RETURNING *;`;
+      const queries = parser.parseQueries(returningSql, tables);
+      const q = queries[0];
+      expect(q.returns.length).toBeGreaterThanOrEqual(5);
+      expect(q.returns.map((c) => c.name)).toContain("id");
+    });
+
+    test("resolves RETURNING with explicit columns", () => {
+      const tables = parser.parseSchema(schemaSql);
+      const returningSql = `-- name: CreateUserReturningId :one\nINSERT INTO users (name, email) VALUES ($1, $2) RETURNING id, name;`;
+      const queries = parser.parseQueries(returningSql, tables);
+      const q = queries[0];
+      expect(q.returns).toHaveLength(2);
+      expect(q.returns.map((c) => c.name)).toEqual(["id", "name"]);
+    });
+
+    test("infers column from LOWER(col) = $N expression", () => {
+      const tables = parser.parseSchema(schemaSql);
+      const exprSql = `-- name: FindByLowerName :many\nSELECT * FROM users WHERE LOWER(name) = $1;`;
+      const queries = parser.parseQueries(exprSql, tables);
+      const q = queries[0];
+      expect(q.params[0].name).toBe("name");
+    });
+
+    test("table-level PRIMARY KEY sets nullable false", () => {
+      const compositePkSql = `CREATE TABLE order_items (\n  order_id INTEGER NOT NULL,\n  item_id INTEGER NOT NULL,\n  qty INTEGER NOT NULL,\n  PRIMARY KEY (order_id, item_id)\n);`;
+      const tables = parser.parseSchema(compositePkSql);
+      const t = tables[0];
+      expect(t.primaryKey).toEqual(["order_id", "item_id"]);
+      const orderIdCol = t.columns.find((c) => c.name === "order_id")!;
+      expect(orderIdCol.nullable).toBe(false);
+    });
   });
 });

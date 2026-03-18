@@ -1,5 +1,5 @@
 import type { DriverGenerator } from "@/generator/interface";
-import type { QueryDef, SqlType, SqlTypeCategory } from "@/ir";
+import type { QueryDef, SqlType } from "@/ir";
 import { camelCase, pascalCase } from "@/utils";
 
 /** Split PascalCase/camelCase into words before applying case utils */
@@ -108,7 +108,7 @@ export class BunSqlClient implements DatabaseClient {
       const paramsInterface = generateParamsType(query);
       const paramsTypeName = `${toPascal(query.name)}Params`;
       // JSON.stringify handles newlines, quotes, backslashes safely
-      const sqlConst = `const ${fnName}Sql = ${JSON.stringify(query.sql)};`;
+      const sqlConst = `export const ${fnName}Sql = ${JSON.stringify(query.sql)};`;
 
       const paramsSig = hasParams ? `, params: ${paramsTypeName}` : "";
       const valuesArg = hasParams

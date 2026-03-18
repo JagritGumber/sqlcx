@@ -33,8 +33,9 @@ export function resolveParamNames(params: RawParam[]): string[] {
   const seen = new Set<string>();
   for (let i = 0; i < assigned.length; i++) {
     let name = assigned[i];
+    let suffix = 1;
     while (seen.has(name)) {
-      name = `${name}_${i + 1}`;
+      name = `${assigned[i]}_${suffix++}`;
     }
     assigned[i] = name;
     seen.add(name);

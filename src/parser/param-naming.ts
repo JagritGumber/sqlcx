@@ -5,7 +5,7 @@ export interface RawParam {
 }
 
 export function resolveParamNames(params: RawParam[]): string[] {
-  // First pass: apply overrides and collect column frequency
+  // Pass 1: count column frequency (needed to know which columns collide)
   const freq = new Map<string, number>();
   for (const p of params) {
     if (!p.override && p.column) {
@@ -13,33 +13,37 @@ export function resolveParamNames(params: RawParam[]): string[] {
     }
   }
 
-  // Second pass: assign names with collision suffixes
+  // Pass 2: assign names + dedup in one go
   const counters = new Map<string, number>();
-  const assigned: string[] = params.map((p) => {
-    if (p.override) return p.override;
-    if (!p.column) return `param_${p.index}`;
+  const seen = new Set<string>();
+  const result: string[] = new Array(params.length);
 
-    const count = freq.get(p.column) ?? 0;
-    if (count > 1) {
+  for (let i = 0; i < params.length; i++) {
+    const p = params[i];
+    let name: string;
+
+    if (p.override) {
+      name = p.override;
+    } else if (!p.column) {
+      name = `param_${p.index}`;
+    } else if ((freq.get(p.column) ?? 0) > 1) {
       const n = (counters.get(p.column) ?? 0) + 1;
       counters.set(p.column, n);
-      return `${p.column}_${n}`;
+      name = `${p.column}_${n}`;
+    } else {
+      name = p.column;
     }
 
-    return p.column;
-  });
-
-  // Third pass: detect and fix duplicates (override-vs-inferred or suffix-vs-literal)
-  const seen = new Set<string>();
-  for (let i = 0; i < assigned.length; i++) {
-    let name = assigned[i];
+    // Dedup: resolve any remaining collisions (override-vs-inferred, suffix-vs-literal)
+    const base = name;
     let suffix = 1;
     while (seen.has(name)) {
-      name = `${assigned[i]}_${suffix++}`;
+      name = `${base}_${suffix++}`;
     }
-    assigned[i] = name;
+
     seen.add(name);
+    result[i] = name;
   }
 
-  return assigned;
+  return result;
 }

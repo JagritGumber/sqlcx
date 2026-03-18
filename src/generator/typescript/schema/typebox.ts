@@ -2,6 +2,10 @@ import type { SchemaGenerator } from "@/generator/interface";
 import type { SqlcxIR, TableDef, EnumDef, SqlType, ColumnDef } from "@/ir";
 import { pascalCase } from "@/utils";
 
+function escapeString(str: string): string {
+  return str.replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/\n/g, "\\n");
+}
+
 function typeBoxType(type: SqlType, ir: SqlcxIR): string {
   if (type.elementType) {
     return `Type.Array(${typeBoxType(type.elementType, ir)})`;
@@ -63,7 +67,7 @@ function objectBody(
   ir: SqlcxIR,
 ): string {
   const fields = columns
-    .map((col) => `  "${col.name}": ${mapper(col, ir)}`)
+    .map((col) => `  "${escapeString(col.name)}": ${mapper(col, ir)}`)
     .join(",\n");
   return `{\n${fields}\n}`;
 }
@@ -79,7 +83,7 @@ export function createTypeBoxGenerator(): SchemaGenerator {
     generateEnumSchema(enumDef: EnumDef): string {
       const name = pascalCase(enumDef.name);
       const literals = enumDef.values
-        .map((v) => `Type.Literal("${v}")`)
+        .map((v) => `Type.Literal("${escapeString(v)}")`)
         .join(", ");
       return `export const ${name} = Type.Union([${literals}]);`;
     },

@@ -23,12 +23,9 @@ function typeBoxType(type: SqlType, ir: SqlcxIR): string {
     case "binary":
       return "Type.Uint8Array()";
     case "enum": {
-      const enumDef = ir.enums.find((e) => e.name === type.enumName);
-      if (enumDef) {
-        const literals = enumDef.values
-          .map((v) => `Type.Literal("${v}")`)
-          .join(", ");
-        return `Type.Union([${literals}])`;
+      // Reference the named enum schema variable instead of inlining
+      if (type.enumName) {
+        return pascalCase(type.enumName);
       }
       return "Type.String()";
     }
@@ -47,6 +44,13 @@ function selectColumn(col: ColumnDef, ir: SqlcxIR): string {
 
 function insertColumn(col: ColumnDef, ir: SqlcxIR): string {
   const base = typeBoxType(col.type, ir);
+  if (col.hasDefault) {
+    // Columns with defaults are optional in inserts (user can override or omit)
+    if (col.nullable) {
+      return `Type.Optional(Type.Union([${base}, Type.Null()]))`;
+    }
+    return `Type.Optional(${base})`;
+  }
   if (col.nullable) {
     return `Type.Optional(Type.Union([${base}, Type.Null()]))`;
   }
@@ -69,7 +73,7 @@ export function createTypeBoxGenerator(): SchemaGenerator {
     name: "typebox",
 
     generateImports(): string {
-      return 'import { Type, type Static } from "@sinclair/typebox";';
+      return `import { Type, type Static } from "@sinclair/typebox";\n\ntype Prettify<T> = { [K in keyof T]: T[K] } & {};`;
     },
 
     generateEnumSchema(enumDef: EnumDef): string {
@@ -88,8 +92,8 @@ export function createTypeBoxGenerator(): SchemaGenerator {
 
     generateInsertSchema(table: TableDef, ir: SqlcxIR): string {
       const name = `Insert${pascalCase(table.name)}`;
-      const cols = table.columns.filter((c) => !c.hasDefault);
-      const body = objectBody(cols, insertColumn, ir);
+      // Include ALL columns — those with defaults are wrapped in Type.Optional()
+      const body = objectBody(table.columns, insertColumn, ir);
       return `export const ${name} = Type.Object(${body});`;
     },
 

@@ -262,32 +262,45 @@ export default defineConfig({
 // CLI entry point
 // ---------------------------------------------------------------------------
 
-const args = process.argv.slice(2);
-const command = args[0];
-
-if (command === "generate") {
-  await generate({
-    sqlDir: getFlag(args, "--sql") ?? "./sql",
-    outDir: getFlag(args, "--out") ?? "./src/db",
-    cacheDir: getFlag(args, "--cache") ?? ".sqlcx",
-  });
-} else if (command === "check") {
-  const result = await check({
-    sqlDir: getFlag(args, "--sql") ?? "./sql",
-    cacheDir: getFlag(args, "--cache") ?? ".sqlcx",
-  });
-  if (!result.valid) {
-    console.error("Check failed:", result.errors);
-    process.exit(1);
-  }
-  console.log(
-    `Check passed: ${result.tables} tables, ${result.queries} queries`,
-  );
-} else if (command === "init") {
-  await init();
-} else if (command !== undefined) {
+function printHelp(): void {
   console.log("Usage: sqlcx <generate|check|init> [options]");
+  console.log("");
+  console.log("Commands:");
+  console.log("  generate    Parse SQL and generate typed code");
+  console.log("  check       Validate SQL files without generating (CI-friendly)");
+  console.log("  init        Scaffold sql/ directory with example files");
+  console.log("");
+  console.log("Options:");
   console.log("  --sql <dir>    SQL directory (default: ./sql)");
   console.log("  --out <dir>    Output directory (default: ./src/db)");
   console.log("  --cache <dir>  Cache directory (default: .sqlcx)");
+}
+
+if (import.meta.main) {
+  const args = process.argv.slice(2);
+  const command = args[0];
+
+  if (command === "generate") {
+    await generate({
+      sqlDir: getFlag(args, "--sql") ?? "./sql",
+      outDir: getFlag(args, "--out") ?? "./src/db",
+      cacheDir: getFlag(args, "--cache") ?? ".sqlcx",
+    });
+  } else if (command === "check") {
+    const result = await check({
+      sqlDir: getFlag(args, "--sql") ?? "./sql",
+      cacheDir: getFlag(args, "--cache") ?? ".sqlcx",
+    });
+    if (!result.valid) {
+      console.error("Check failed:", result.errors);
+      process.exit(1);
+    }
+    console.log(
+      `Check passed: ${result.tables} tables, ${result.queries} queries`,
+    );
+  } else if (command === "init") {
+    await init();
+  } else {
+    printHelp();
+  }
 }

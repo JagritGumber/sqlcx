@@ -1,7 +1,7 @@
 import { describe, expect, test, beforeEach, afterEach } from "bun:test";
 import { computeHash, readCache, writeCache } from "@/cache";
 import type { SqlcxIR } from "@/ir";
-import { mkdirSync, rmSync, existsSync } from "fs";
+import { mkdirSync, rmSync, existsSync, writeFileSync } from "fs";
 import { join } from "path";
 
 const testCacheDir = join(import.meta.dir, ".test-sqlcx");
@@ -66,5 +66,27 @@ describe("IR Cache", () => {
     const nested = join(testCacheDir, "nested", "deep");
     writeCache(nested, ir, "abc123");
     expect(existsSync(join(nested, "ir.json"))).toBe(true);
+  });
+
+  test("computeHash changes when file is renamed", () => {
+    const hash1 = computeHash([{ path: "old.sql", content: "SELECT 1" }]);
+    const hash2 = computeHash([{ path: "new.sql", content: "SELECT 1" }]);
+    expect(hash1).not.toBe(hash2);
+  });
+
+  test("computeHash distinguishes single file from split files", () => {
+    const hash1 = computeHash([{ path: "a.sql", content: "X\nY" }]);
+    const hash2 = computeHash([
+      { path: "a.sql", content: "X" },
+      { path: "b.sql", content: "Y" },
+    ]);
+    expect(hash1).not.toBe(hash2);
+  });
+
+  test("readCache returns null on corrupted cache file", () => {
+    mkdirSync(testCacheDir, { recursive: true });
+    writeFileSync(join(testCacheDir, "ir.json"), "not valid json{{{");
+    const result = readCache(testCacheDir, "abc123");
+    expect(result).toBeNull();
   });
 });

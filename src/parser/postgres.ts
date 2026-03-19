@@ -225,6 +225,11 @@ class JsonShapeParser {
   parse(): JsonShape {
     const shape = this.parseType();
     this.skipWs();
+    if (this.pos < this.input.length) {
+      throw new Error(
+        `@json parse error: unexpected trailing content at position ${this.pos}: "${this.input.slice(this.pos, this.pos + 10)}"`,
+      );
+    }
     return shape;
   }
 
@@ -239,8 +244,10 @@ class JsonShapeParser {
     }
 
     // Check for array suffix []
+    this.skipWs();
     while (this.lookAhead("[]")) {
       this.pos += 2;
+      this.skipWs();
       shape = { kind: "array", element: shape };
     }
 
@@ -371,19 +378,16 @@ function parseSchemaDefs(sql: string, enumNames: Set<string>): TableDef[] {
     // Split body into raw lines, then group comments with the column that follows
     const rawLines = body.split("\n");
     let pendingComment = "";
-    const annotatedParts: { comment: string; def: string }[] = [];
-
     // First pass: associate comment lines with column defs
     // We accumulate lines into defs using splitColumnDefs on non-comment text
     let nonCommentBuffer = "";
     const commentMap = new Map<number, string>(); // defIndex -> comment
-    let defCount = 0;
 
     for (const rawLine of rawLines) {
       const trimmedLine = rawLine.trim();
       if (trimmedLine.startsWith("--")) {
-        // This is a comment line; save it for the next column
-        pendingComment = trimmedLine;
+        // Accumulate comment lines — annotations can be on any line above the column
+        pendingComment += (pendingComment ? "\n" : "") + trimmedLine;
       } else {
         // Non-comment content; track how many defs this adds
         const beforeDefs = splitColumnDefs(nonCommentBuffer).filter(
@@ -395,7 +399,7 @@ function parseSchemaDefs(sql: string, enumNames: Set<string>): TableDef[] {
         ).length;
 
         if (afterDefs > beforeDefs && pendingComment) {
-          commentMap.set(afterDefs - 1, pendingComment);
+          commentMap.set(beforeDefs, pendingComment);
           pendingComment = "";
         } else if (afterDefs === beforeDefs) {
           // Still accumulating same def, keep comment pending

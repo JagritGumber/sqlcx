@@ -116,4 +116,46 @@ describe("Inline Annotations", () => {
       expect(col.type.jsonShape).toBeUndefined();
     });
   });
+
+  describe("edge cases", () => {
+    test("annotation survives when followed by description comment", () => {
+      const sql = `CREATE TABLE users (
+  id SERIAL PRIMARY KEY,
+  -- @enum("admin", "user")
+  -- Description of the role column
+  role TEXT NOT NULL
+);`;
+      const tables = parser.parseSchema(sql);
+      const col = tables[0].columns.find((c) => c.name === "role")!;
+      expect(col.type.enumValues).toEqual(["admin", "user"]);
+    });
+
+    test("@json with spaces before [] parses as array", () => {
+      const sql = `CREATE TABLE users (
+  id SERIAL PRIMARY KEY,
+  -- @json(string [])
+  tags JSONB
+);`;
+      const tables = parser.parseSchema(sql);
+      const col = tables[0].columns.find((c) => c.name === "tags")!;
+      expect(col.type.jsonShape).toEqual({
+        kind: "array",
+        element: { kind: "string" },
+      });
+    });
+
+    test("@json object with spaces before [] parses as array of objects", () => {
+      const sql = `CREATE TABLE users (
+  id SERIAL PRIMARY KEY,
+  -- @json({ name: string } [])
+  items JSONB
+);`;
+      const tables = parser.parseSchema(sql);
+      const col = tables[0].columns.find((c) => c.name === "items")!;
+      expect(col.type.jsonShape).toEqual({
+        kind: "array",
+        element: { kind: "object", fields: { name: { kind: "string" } } },
+      });
+    });
+  });
 });

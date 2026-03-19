@@ -9,12 +9,22 @@ export type SqlTypeCategory =
   | "enum"
   | "unknown";
 
+export type JsonShape =
+  | { kind: "string" }
+  | { kind: "number" }
+  | { kind: "boolean" }
+  | { kind: "object"; fields: Record<string, JsonShape> }
+  | { kind: "array"; element: JsonShape }
+  | { kind: "nullable"; inner: JsonShape };
+
 export interface SqlType {
   raw: string;
   normalized: string;
   category: SqlTypeCategory;
   elementType?: SqlType;
   enumName?: string;
+  enumValues?: string[];
+  jsonShape?: JsonShape;
 }
 
 export interface ColumnDef {

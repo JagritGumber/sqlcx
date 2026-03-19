@@ -7,6 +7,7 @@ import type {
   SqlTypeCategory,
   QueryCommand,
   ParamDef,
+  JsonShape,
 } from "@/ir";
 import type { DatabaseParser } from "@/parser/interface";
 import { resolveParamNames, type RawParam } from "@/parser/param-naming";
@@ -196,6 +197,164 @@ function parseColumnLine(
   };
 }
 
+// ---------------------------------------------------------------------------
+// Inline annotation parsing (@enum, @json)
+// ---------------------------------------------------------------------------
+
+function parseEnumAnnotation(comment: string): string[] | undefined {
+  const match = comment.match(/--\s*@enum\s*\(\s*(.*?)\s*\)/);
+  if (!match) return undefined;
+  const inner = match[1];
+  const values: string[] = [];
+  const re = /"([^"]*?)"/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(inner)) !== null) {
+    values.push(m[1]);
+  }
+  return values.length > 0 ? values : undefined;
+}
+
+/**
+ * Recursive-descent parser for the @json type DSL.
+ * Supports: string, number, boolean, { key: type }, type[], type?
+ */
+class JsonShapeParser {
+  private pos = 0;
+  constructor(private input: string) {}
+
+  parse(): JsonShape {
+    const shape = this.parseType();
+    this.skipWs();
+    return shape;
+  }
+
+  private parseType(): JsonShape {
+    this.skipWs();
+    let shape: JsonShape;
+
+    if (this.peek() === "{") {
+      shape = this.parseObject();
+    } else {
+      shape = this.parsePrimitive();
+    }
+
+    // Check for array suffix []
+    while (this.lookAhead("[]")) {
+      this.pos += 2;
+      shape = { kind: "array", element: shape };
+    }
+
+    // Check for nullable suffix ?
+    if (this.peek() === "?") {
+      this.pos++;
+      shape = { kind: "nullable", inner: shape };
+    }
+
+    return shape;
+  }
+
+  private parsePrimitive(): JsonShape {
+    this.skipWs();
+    if (this.matchWord("string")) return { kind: "string" };
+    if (this.matchWord("number")) return { kind: "number" };
+    if (this.matchWord("boolean")) return { kind: "boolean" };
+    throw new Error(
+      `@json parse error: unexpected token at position ${this.pos}: "${this.input.slice(this.pos, this.pos + 10)}"`,
+    );
+  }
+
+  private parseObject(): JsonShape {
+    this.consume("{");
+    this.skipWs();
+    const fields: Record<string, JsonShape> = {};
+
+    if (this.peek() !== "}") {
+      this.parseField(fields);
+      while (this.peek() === ",") {
+        this.pos++; // consume ','
+        this.skipWs();
+        if (this.peek() === "}") break; // trailing comma
+        this.parseField(fields);
+      }
+    }
+
+    this.consume("}");
+    return { kind: "object", fields };
+  }
+
+  private parseField(fields: Record<string, JsonShape>): void {
+    this.skipWs();
+    const name = this.readIdentifier();
+    this.skipWs();
+    this.consume(":");
+    this.skipWs();
+    fields[name] = this.parseType();
+    this.skipWs();
+  }
+
+  private readIdentifier(): string {
+    this.skipWs();
+    const start = this.pos;
+    while (this.pos < this.input.length && /[\w]/.test(this.input[this.pos])) {
+      this.pos++;
+    }
+    if (this.pos === start) {
+      throw new Error(
+        `@json parse error: expected identifier at position ${this.pos}`,
+      );
+    }
+    return this.input.slice(start, this.pos);
+  }
+
+  private skipWs(): void {
+    while (this.pos < this.input.length && /\s/.test(this.input[this.pos])) {
+      this.pos++;
+    }
+  }
+
+  private peek(): string | undefined {
+    this.skipWs();
+    return this.input[this.pos];
+  }
+
+  private lookAhead(s: string): boolean {
+    return this.input.startsWith(s, this.pos);
+  }
+
+  private matchWord(word: string): boolean {
+    if (this.input.startsWith(word, this.pos)) {
+      const afterPos = this.pos + word.length;
+      if (afterPos >= this.input.length || !/\w/.test(this.input[afterPos])) {
+        this.pos = afterPos;
+        return true;
+      }
+    }
+    return false;
+  }
+
+  private consume(ch: string): void {
+    this.skipWs();
+    if (this.input[this.pos] !== ch) {
+      throw new Error(
+        `@json parse error: expected '${ch}' at position ${this.pos}, got '${this.input[this.pos]}'`,
+      );
+    }
+    this.pos++;
+  }
+}
+
+function parseJsonAnnotation(comment: string): JsonShape | undefined {
+  const match = comment.match(/--\s*@json\s*\(\s*([\s\S]+)\s*\)\s*$/);
+  if (!match) return undefined;
+  const body = match[1].trim();
+  try {
+    const parser = new JsonShapeParser(body);
+    return parser.parse();
+  } catch {
+    return undefined;
+  }
+}
+
 function parseSchemaDefs(sql: string, enumNames: Set<string>): TableDef[] {
   const re = new RegExp(CREATE_TABLE_RE_SOURCE, "gi");
   const tables: TableDef[] = [];
@@ -209,10 +368,47 @@ function parseSchemaDefs(sql: string, enumNames: Set<string>): TableDef[] {
     const primaryKey: string[] = [];
     const uniqueConstraints: string[][] = [];
 
-    const lines = splitColumnDefs(body);
+    // Split body into raw lines, then group comments with the column that follows
+    const rawLines = body.split("\n");
+    let pendingComment = "";
+    const annotatedParts: { comment: string; def: string }[] = [];
 
-    for (const line of lines) {
-      const trimmed = line.trim();
+    // First pass: associate comment lines with column defs
+    // We accumulate lines into defs using splitColumnDefs on non-comment text
+    let nonCommentBuffer = "";
+    const commentMap = new Map<number, string>(); // defIndex -> comment
+    let defCount = 0;
+
+    for (const rawLine of rawLines) {
+      const trimmedLine = rawLine.trim();
+      if (trimmedLine.startsWith("--")) {
+        // This is a comment line; save it for the next column
+        pendingComment = trimmedLine;
+      } else {
+        // Non-comment content; track how many defs this adds
+        const beforeDefs = splitColumnDefs(nonCommentBuffer).filter(
+          (d) => d.trim().length > 0,
+        ).length;
+        nonCommentBuffer += (nonCommentBuffer ? "\n" : "") + rawLine;
+        const afterDefs = splitColumnDefs(nonCommentBuffer).filter(
+          (d) => d.trim().length > 0,
+        ).length;
+
+        if (afterDefs > beforeDefs && pendingComment) {
+          commentMap.set(afterDefs - 1, pendingComment);
+          pendingComment = "";
+        } else if (afterDefs === beforeDefs) {
+          // Still accumulating same def, keep comment pending
+        } else {
+          pendingComment = "";
+        }
+      }
+    }
+
+    const lines = splitColumnDefs(nonCommentBuffer);
+
+    for (let i = 0; i < lines.length; i++) {
+      const trimmed = lines[i].trim();
 
       // Table-level PRIMARY KEY constraint
       const pkMatch = trimmed.match(
@@ -227,6 +423,27 @@ function parseSchemaDefs(sql: string, enumNames: Set<string>): TableDef[] {
 
       const result = parseColumnLine(trimmed, enumNames);
       if (!result) continue;
+
+      // Apply inline annotations from the comment above this column
+      const comment = commentMap.get(i);
+      if (comment) {
+        const enumValues = parseEnumAnnotation(comment);
+        if (enumValues) {
+          result.col.type = {
+            ...result.col.type,
+            category: "enum",
+            enumValues,
+          };
+        }
+
+        const jsonShape = parseJsonAnnotation(comment);
+        if (jsonShape) {
+          result.col.type = {
+            ...result.col.type,
+            jsonShape,
+          };
+        }
+      }
 
       columns.push(result.col);
       if (result.isPK) {

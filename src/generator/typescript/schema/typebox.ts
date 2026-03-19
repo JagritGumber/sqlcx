@@ -1,5 +1,5 @@
 import type { SchemaGenerator } from "@/generator/interface";
-import type { SqlcxIR, TableDef, EnumDef, SqlType, ColumnDef } from "@/ir";
+import type { SqlcxIR, TableDef, EnumDef, SqlType, ColumnDef, JsonShape } from "@/ir";
 import { pascalCase } from "@/utils";
 
 /** Safely escape a string for embedding in generated JS/TS double-quoted literals */
@@ -7,7 +7,41 @@ function escapeString(str: string): string {
   return JSON.stringify(str).slice(1, -1); // strip outer quotes from JSON.stringify
 }
 
+function jsonShapeToTypeBox(shape: JsonShape): string {
+  switch (shape.kind) {
+    case "string":
+      return "Type.String()";
+    case "number":
+      return "Type.Number()";
+    case "boolean":
+      return "Type.Boolean()";
+    case "object": {
+      const fields = Object.entries(shape.fields)
+        .map(([key, val]) => `"${escapeString(key)}": ${jsonShapeToTypeBox(val)}`)
+        .join(", ");
+      return `Type.Object({ ${fields} })`;
+    }
+    case "array":
+      return `Type.Array(${jsonShapeToTypeBox(shape.element)})`;
+    case "nullable":
+      return `Type.Union([${jsonShapeToTypeBox(shape.inner)}, Type.Null()])`;
+  }
+}
+
 function typeBoxType(type: SqlType): string {
+  // Inline @enum annotation takes precedence
+  if (type.enumValues) {
+    const literals = type.enumValues
+      .map((v) => `Type.Literal("${escapeString(v)}")`)
+      .join(", ");
+    return `Type.Union([${literals}])`;
+  }
+
+  // Inline @json annotation takes precedence over generic json category
+  if (type.jsonShape) {
+    return jsonShapeToTypeBox(type.jsonShape);
+  }
+
   if (type.elementType) {
     return `Type.Array(${typeBoxType(type.elementType)})`;
   }

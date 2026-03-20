@@ -1,6 +1,6 @@
 {
   "name": "sqlcx-orm",
-  "version": "0.1.0",
+  "version": "0.1.2",
   "description": "SQL-first cross-language type-safe code generator",
   "type": "module",
   "bin": {

@@ -106,6 +106,17 @@ preferences JSONB
 
 Generates a fully typed TypeBox object schema. Supports nested objects, arrays (`string[]`), and nullable (`string?`).
 
+### Partial column selection
+
+Only select the columns you need — the generated type matches exactly what you query:
+
+```sql
+-- name: ListUsers :many
+SELECT id, name, email FROM users ORDER BY created_at DESC;
+```
+
+Generates a `ListUsersRow` with only `{ id: number; name: string; email: string }` — not the full table type. No over-fetching in your types.
+
 ### `RETURNING` clause support
 
 ```sql

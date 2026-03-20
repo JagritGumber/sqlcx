@@ -1,0 +1,10 @@
+{
+  "name": "sqlcx-example-basic",
+  "private": true,
+  "scripts": {
+    "generate": "sqlcx generate --sql ./sql --out ./src/db"
+  },
+  "dependencies": {
+    "sqlcx": "file:../../"
+  }
+}

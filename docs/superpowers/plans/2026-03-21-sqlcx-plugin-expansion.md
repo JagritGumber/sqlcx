@@ -330,7 +330,7 @@ CREATE TABLE users (
   role ENUM('admin', 'user', 'guest') NOT NULL DEFAULT 'user',
   preferences JSON,
   is_active TINYINT(1) NOT NULL DEFAULT 1,
-  score DECIMAL(10, 2),
+  score DECIMAL(10, 2) UNSIGNED,
   avatar BLOB,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   full_name VARCHAR(255) GENERATED ALWAYS AS (CONCAT(name, ' ', email)) STORED
@@ -994,7 +994,7 @@ git commit -m "feat(rust): add TypeScript type-check verification infrastructure
 | 19 | Zod v4 generator | 17 | Yes (with 18, 20, 21) |
 | 20 | Zod v3 generator | 17 | Yes (with 18, 19, 21) |
 | 21 | pg driver generator | 17 | Yes (with 18, 19, 20) |
-| 22 | TypeScript typecheck infra | 18-21 | No |
+| 22 | TypeScript typecheck infra | 19-21 | No |
 
 **Critical path:** 16 → 17 → (18 \|\| 19 \|\| 20 \|\| 21) → 22
 **Maximum parallelism:** 4 tasks at once (18-21)

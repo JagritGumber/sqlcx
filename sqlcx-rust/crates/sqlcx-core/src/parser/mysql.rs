@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 use regex::Regex;
 
@@ -14,45 +14,68 @@ use crate::parser::DatabaseParser;
 
 fn type_category(normalized: &str) -> Option<SqlTypeCategory> {
     match normalized {
-        "text" | "varchar" | "char" | "character varying" | "character" | "name" => {
+        "text" | "varchar" | "char" | "character" | "tinytext" | "mediumtext" | "longtext" => {
             Some(SqlTypeCategory::String)
         }
-        "integer" | "int" | "int2" | "int4" | "int8" | "smallint" | "bigint" | "serial"
-        | "bigserial" | "real" | "double precision" | "numeric" | "decimal" | "float"
-        | "float4" | "float8" => Some(SqlTypeCategory::Number),
+        "int" | "integer" | "tinyint" | "smallint" | "mediumint" | "bigint" | "serial"
+        | "float" | "double" | "real" | "decimal" | "numeric" => Some(SqlTypeCategory::Number),
         "boolean" | "bool" => Some(SqlTypeCategory::Boolean),
-        "timestamp" | "timestamptz" | "date" | "time" | "timetz"
-        | "timestamp without time zone" | "timestamp with time zone" => Some(SqlTypeCategory::Date),
-        "json" | "jsonb" => Some(SqlTypeCategory::Json),
-        "uuid" => Some(SqlTypeCategory::Uuid),
-        "bytea" => Some(SqlTypeCategory::Binary),
+        "date" | "datetime" | "timestamp" | "time" | "year" => Some(SqlTypeCategory::Date),
+        "json" => Some(SqlTypeCategory::Json),
+        "binary" | "varbinary" | "blob" | "tinyblob" | "mediumblob" | "longblob" => {
+            Some(SqlTypeCategory::Binary)
+        }
         _ => None,
     }
 }
 
-fn is_serial(normalized: &str) -> bool {
-    matches!(normalized, "serial" | "bigserial")
-}
-
-fn resolve_sql_type(raw: &str, enum_names: &HashSet<String>) -> SqlType {
+/// Resolve a raw MySQL type string into a SqlType.
+/// Handles ENUM('a','b'), TINYINT(1) → Boolean, and standard types.
+fn resolve_sql_type(raw: &str) -> SqlType {
     let trimmed = raw.trim();
 
-    // Array detection
-    if trimmed.ends_with("[]") {
-        let base_raw = &trimmed[..trimmed.len() - 2];
-        let element = resolve_sql_type(base_raw, enum_names);
+    // Inline ENUM: ENUM('a', 'b', 'c')
+    let enum_re = Regex::new(r"(?i)^ENUM\s*\(\s*((?:'[^']*'(?:\s*,\s*'[^']*')*)?)\s*\)").unwrap();
+    if let Some(cap) = enum_re.captures(trimmed) {
+        let val_re = Regex::new(r"'([^']*)'").unwrap();
+        let values: Vec<String> = val_re
+            .captures_iter(&cap[1])
+            .map(|v| v[1].to_string())
+            .collect();
         return SqlType {
             raw: trimmed.to_string(),
-            normalized: trimmed.to_lowercase(),
-            category: element.category.clone(),
-            element_type: Some(Box::new(element)),
+            normalized: "enum".to_string(),
+            category: SqlTypeCategory::Enum,
+            element_type: None,
+            enum_name: None,
+            enum_values: Some(values),
+            json_shape: None,
+        };
+    }
+
+    // TINYINT(1) → Boolean
+    let tinyint_bool_re = Regex::new(r"(?i)^TINYINT\s*\(\s*1\s*\)").unwrap();
+    if tinyint_bool_re.is_match(trimmed) {
+        return SqlType {
+            raw: trimmed.to_string(),
+            normalized: "tinyint(1)".to_string(),
+            category: SqlTypeCategory::Boolean,
+            element_type: None,
             enum_name: None,
             enum_values: None,
             json_shape: None,
         };
     }
 
-    let normalized = trimmed.to_lowercase();
+    // Strip parenthesized size/precision: VARCHAR(255) → varchar, DECIMAL(10,2) → decimal
+    let base_re = Regex::new(r"(?i)^(\w+)").unwrap();
+    let base = base_re
+        .captures(trimmed)
+        .map(|c| c[1].to_lowercase())
+        .unwrap_or_else(|| trimmed.to_lowercase());
+
+    // Strip trailing UNSIGNED/SIGNED/ZEROFILL from the base if present in rest
+    let normalized = base.clone();
 
     if let Some(cat) = type_category(&normalized) {
         return SqlType {
@@ -61,19 +84,6 @@ fn resolve_sql_type(raw: &str, enum_names: &HashSet<String>) -> SqlType {
             category: cat,
             element_type: None,
             enum_name: None,
-            enum_values: None,
-            json_shape: None,
-        };
-    }
-
-    // Check for known enum
-    if enum_names.contains(&normalized) {
-        return SqlType {
-            raw: trimmed.to_string(),
-            normalized: normalized.clone(),
-            category: SqlTypeCategory::Enum,
-            element_type: None,
-            enum_name: Some(normalized),
             enum_values: None,
             json_shape: None,
         };
@@ -90,36 +100,7 @@ fn resolve_sql_type(raw: &str, enum_names: &HashSet<String>) -> SqlType {
     }
 }
 
-// ── Enum parsing ─────────────────────────────────────────────────────────────
-
-fn parse_enum_defs(sql: &str) -> Vec<EnumDef> {
-    let re = Regex::new(
-        r"(?i)CREATE\s+TYPE\s+(\w+)\s+AS\s+ENUM\s*\(\s*((?:'[^']*'(?:\s*,\s*'[^']*')*)?)\s*\)",
-    )
-    .unwrap();
-    let val_re = Regex::new(r"'([^']*)'").unwrap();
-
-    let mut enums = Vec::new();
-    for cap in re.captures_iter(sql) {
-        let name = cap[1].to_lowercase();
-        let values_raw = &cap[2];
-        let values: Vec<String> = val_re
-            .captures_iter(values_raw)
-            .map(|v| v[1].to_string())
-            .collect();
-        enums.push(EnumDef { name, values });
-    }
-    enums
-}
-
-// ── Schema parsing (regex-based, matching TS) ────────────────────────────────
-
-const MULTI_WORD_TYPES: &[&str] = &[
-    "character varying",
-    "double precision",
-    "timestamp without time zone",
-    "timestamp with time zone",
-];
+// ── Schema parsing ───────────────────────────────────────────────────────────
 
 /// Split CREATE TABLE body by commas, respecting nested parens.
 fn split_column_defs(body: &str) -> Vec<String> {
@@ -160,7 +141,7 @@ struct ParsedColumn {
     is_unique: bool,
 }
 
-fn parse_column_line(line: &str, enum_names: &HashSet<String>) -> Option<ParsedColumn> {
+fn parse_column_line(line: &str) -> Option<ParsedColumn> {
     let line = line.trim();
     if line.is_empty() {
         return None;
@@ -168,47 +149,56 @@ fn parse_column_line(line: &str, enum_names: &HashSet<String>) -> Option<ParsedC
 
     // Skip constraint lines
     let constraint_re =
-        Regex::new(r"(?i)^(PRIMARY\s+KEY|CONSTRAINT|UNIQUE|CHECK|FOREIGN\s+KEY)").unwrap();
+        Regex::new(r"(?i)^(PRIMARY\s+KEY|CONSTRAINT|UNIQUE|CHECK|FOREIGN\s+KEY|KEY\s+)").unwrap();
     if constraint_re.is_match(line) {
         return None;
     }
 
-    // Extract column name (first word)
-    let name_re = Regex::new(r"^(\w+)\s+").unwrap();
+    // Extract column name — may be backtick-quoted
+    let name_re = Regex::new(r"^(?:`(\w+)`|(\w+))\s+").unwrap();
     let name_cap = name_re.captures(line)?;
-    let col_name = name_cap[1].to_lowercase();
+    let col_name = name_cap
+        .get(1)
+        .or_else(|| name_cap.get(2))?
+        .as_str()
+        .to_lowercase();
     let after_name = &line[name_cap[0].len()..];
 
-    // Determine the type - check multi-word types first
-    let mut raw_type: Option<String> = None;
-    for mwt in MULTI_WORD_TYPES {
-        if after_name.to_lowercase().starts_with(mwt) {
-            raw_type = Some(mwt.to_string());
-            break;
-        }
-    }
-    if raw_type.is_none() {
-        let type_re = Regex::new(r"^(\w+(?:\[\])?)").unwrap();
-        if let Some(cap) = type_re.captures(after_name) {
-            raw_type = Some(cap[1].to_string());
-        }
-    }
-    let raw_type = raw_type.unwrap_or_else(|| "unknown".to_string());
+    // Extract the type — could be ENUM(...), TINYINT(1), or simple word with optional (N)
+    let raw_type: String;
+    let rest: &str;
 
-    let rest = &after_name[raw_type.len()..];
+    let enum_re = Regex::new(r"(?i)^(ENUM\s*\([^)]*\))").unwrap();
+    if let Some(cap) = enum_re.captures(after_name) {
+        raw_type = cap[1].to_string();
+        rest = &after_name[cap[0].len()..];
+    } else {
+        // Match type with optional parenthesized params: INT, VARCHAR(255), DECIMAL(10,2)
+        let type_re = Regex::new(r"(?i)^(\w+(?:\s*\([^)]*\))?)").unwrap();
+        if let Some(cap) = type_re.captures(after_name) {
+            raw_type = cap[1].to_string();
+            rest = &after_name[cap[0].len()..];
+        } else {
+            raw_type = "unknown".to_string();
+            rest = after_name;
+        }
+    }
 
     let not_null_re = Regex::new(r"(?i)\bNOT\s+NULL\b").unwrap();
     let default_re = Regex::new(r"(?i)\bDEFAULT\b").unwrap();
     let pk_re = Regex::new(r"(?i)\bPRIMARY\s+KEY\b").unwrap();
     let unique_re = Regex::new(r"(?i)\bUNIQUE\b").unwrap();
+    let auto_inc_re = Regex::new(r"(?i)\bAUTO_INCREMENT\b").unwrap();
+    let generated_re = Regex::new(r"(?i)\bGENERATED\s+ALWAYS\s+AS\b").unwrap();
 
     let is_not_null = not_null_re.is_match(rest);
     let has_default_kw = default_re.is_match(rest);
-    let is_serial_type = is_serial(&raw_type.to_lowercase());
     let is_pk = pk_re.is_match(rest);
     let is_unique = unique_re.is_match(rest);
+    let is_auto_inc = auto_inc_re.is_match(rest);
+    let is_generated = generated_re.is_match(rest);
 
-    let sql_type = resolve_sql_type(&raw_type, enum_names);
+    let sql_type = resolve_sql_type(&raw_type);
 
     Some(ParsedColumn {
         col: ColumnDef {
@@ -217,22 +207,34 @@ fn parse_column_line(line: &str, enum_names: &HashSet<String>) -> Option<ParsedC
             source_table: None,
             sql_type,
             nullable: !is_not_null,
-            has_default: has_default_kw || is_serial_type,
+            has_default: has_default_kw || is_auto_inc || is_generated,
         },
         is_pk,
         is_unique,
     })
 }
 
-fn parse_schema_tables(sql: &str, enum_names: &HashSet<String>) -> Vec<TableDef> {
+fn parse_schema_tables(sql: &str) -> Vec<TableDef> {
     let table_re = Regex::new(
-        r"(?is)CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?(\w+)\s*\(([\s\S]*?)\)\s*;",
+        r"(?is)CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?(?:`?(\w+)`?)\s*\(([\s\S]*?)\)\s*(?:ENGINE\s*=\s*\w+\s*)?;",
+    )
+    .unwrap();
+
+    // Fallback: also try without trailing ENGINE/;
+    let table_re_fallback = Regex::new(
+        r"(?is)CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?(?:`?(\w+)`?)\s*\(([\s\S]*?)\)\s*;",
     )
     .unwrap();
 
     let mut tables = Vec::new();
+    let captures: Vec<_> = table_re.captures_iter(sql).collect();
+    let captures = if captures.is_empty() {
+        table_re_fallback.captures_iter(sql).collect()
+    } else {
+        captures
+    };
 
-    for cap in table_re.captures_iter(sql) {
+    for cap in &captures {
         let table_name = cap[1].to_lowercase();
         let body = &cap[2];
 
@@ -240,7 +242,6 @@ fn parse_schema_tables(sql: &str, enum_names: &HashSet<String>) -> Vec<TableDef>
         let mut primary_key: Vec<String> = Vec::new();
         let mut unique_constraints: Vec<Vec<String>> = Vec::new();
 
-        // Split body into lines, track comments for annotations
         let raw_lines: Vec<&str> = body.lines().collect();
         let mut pending_comment = String::new();
         let mut non_comment_buf = String::new();
@@ -285,15 +286,15 @@ fn parse_schema_tables(sql: &str, enum_names: &HashSet<String>) -> Vec<TableDef>
 
             // Table-level PRIMARY KEY constraint
             let pk_re =
-                Regex::new(r"(?i)^PRIMARY\s+KEY\s*\(\s*([\w\s,]+)\s*\)").unwrap();
+                Regex::new(r"(?i)^PRIMARY\s+KEY\s*\(\s*([\w\s,`]+)\s*\)").unwrap();
             if let Some(pk_cap) = pk_re.captures(trimmed) {
                 for col in pk_cap[1].split(',') {
-                    primary_key.push(col.trim().to_lowercase());
+                    primary_key.push(col.trim().trim_matches('`').to_lowercase());
                 }
                 continue;
             }
 
-            let Some(mut parsed) = parse_column_line(trimmed, enum_names) else {
+            let Some(mut parsed) = parse_column_line(trimmed) else {
                 continue;
             };
 
@@ -322,9 +323,6 @@ fn parse_schema_tables(sql: &str, enum_names: &HashSet<String>) -> Vec<TableDef>
         for col in &mut columns {
             if primary_key.contains(&col.name) {
                 col.nullable = false;
-                if is_serial(&col.sql_type.normalized) {
-                    col.has_default = true;
-                }
             }
         }
 
@@ -408,60 +406,78 @@ fn split_query_blocks(sql: &str) -> Vec<QueryBlock> {
     blocks
 }
 
+/// Count `?` placeholders left-to-right, returning 1-based indices.
 fn extract_param_indices(sql: &str) -> Vec<u32> {
-    let re = Regex::new(r"\$(\d+)").unwrap();
-    let mut indices: HashSet<u32> = HashSet::new();
-    for cap in re.captures_iter(sql) {
-        if let Ok(idx) = cap[1].parse::<u32>() {
-            indices.insert(idx);
+    let mut count = 0u32;
+    let mut indices = Vec::new();
+    for ch in sql.chars() {
+        if ch == '?' {
+            count += 1;
+            indices.push(count);
         }
     }
-    let mut sorted: Vec<u32> = indices.into_iter().collect();
-    sorted.sort();
-    sorted
+    indices
 }
 
+/// For MySQL `?` placeholders, infer which column each `?` maps to.
 fn infer_param_columns(sql: &str) -> HashMap<u32, String> {
     let mut result = HashMap::new();
 
-    // INSERT pattern
+    // INSERT pattern: INSERT INTO tbl (col1, col2) VALUES (?, ?)
     let insert_re = Regex::new(
-        r"(?i)INSERT\s+INTO\s+\w+\s*\(\s*([\w\s,]+)\s*\)\s*VALUES\s*\(\s*([\$\d\s,]+)\s*\)",
+        r"(?i)INSERT\s+INTO\s+\w+\s*\(\s*([\w\s,`]+)\s*\)\s*VALUES\s*\(\s*([?,\s]+)\s*\)",
     )
     .unwrap();
     if let Some(cap) = insert_re.captures(sql) {
-        let cols: Vec<String> = cap[1].split(',').map(|s| s.trim().to_lowercase()).collect();
-        let param_re = Regex::new(r"\$(\d+)").unwrap();
-        let params: Vec<u32> = param_re
-            .captures_iter(&cap[2])
-            .filter_map(|m| m[1].parse().ok())
+        let cols: Vec<String> = cap[1]
+            .split(',')
+            .map(|s| s.trim().trim_matches('`').to_lowercase())
             .collect();
-
-        for (i, idx) in params.iter().enumerate() {
-            if i < cols.len() {
-                result.insert(*idx, cols[i].clone());
+        // Count ?'s in the VALUES clause
+        let values_str = &cap[2];
+        let mut idx = 0u32;
+        for ch in values_str.chars() {
+            if ch == '?' {
+                idx += 1;
+                if (idx as usize) <= cols.len() {
+                    result.insert(idx, cols[idx as usize - 1].clone());
+                }
             }
         }
         return result;
     }
 
-    // WHERE/SET pattern
-    let sql_keywords: HashSet<&str> = [
+    // WHERE/SET pattern: col = ? or col LIKE ?
+    let sql_keywords: std::collections::HashSet<&str> = [
         "not", "and", "or", "where", "set", "when", "then", "else", "case", "between", "exists",
         "any", "all", "some", "having",
     ]
     .into_iter()
     .collect();
 
+    // Find column = ? patterns by walking through and counting ?'s
     let where_re = Regex::new(
-        r"(?i)(?:(\w+)\s*\(\s*(\w+)\s*\)|(\w+))\s*(?:=|!=|<>|<=?|>=?|(?:NOT\s+)?(?:I?LIKE|IN|IS))\s*\$(\d+)",
+        r"(?i)(?:(\w+)\s*\(\s*(\w+)\s*\)|(\w+))\s*(?:=|!=|<>|<=?|>=?|(?:NOT\s+)?(?:I?LIKE|IN|IS))\s*\?",
     )
     .unwrap();
 
+    // We need to count ? positions to get the right index
+    // Strategy: find all ? positions, then match patterns to assign columns
+    let mut question_positions: Vec<usize> = Vec::new();
+    for (i, ch) in sql.char_indices() {
+        if ch == '?' {
+            question_positions.push(i);
+        }
+    }
+
     for cap in where_re.captures_iter(sql) {
-        if let Ok(idx) = cap[4].parse::<u32>() {
+        // Find which ? this match refers to by position
+        let match_end = cap.get(0).unwrap().end();
+        // The ? is at match_end - 1
+        let q_pos = match_end - 1;
+        if let Some(idx_0based) = question_positions.iter().position(|&p| p == q_pos) {
+            let idx = (idx_0based + 1) as u32;
             if cap.get(1).is_some() && cap.get(2).is_some() {
-                // FUNC(col) pattern
                 result.insert(idx, cap[2].to_lowercase());
             } else if let Some(m) = cap.get(3) {
                 let word = m.as_str().to_lowercase();
@@ -476,44 +492,13 @@ fn infer_param_columns(sql: &str) -> HashMap<u32, String> {
 }
 
 fn find_from_table<'a>(sql: &str, tables: &'a [TableDef]) -> Option<&'a TableDef> {
-    let re = Regex::new(r"(?i)(?:FROM|INTO|UPDATE)\s+(\w+)").unwrap();
+    let re = Regex::new(r"(?i)(?:FROM|INTO|UPDATE)\s+`?(\w+)`?").unwrap();
     let cap = re.captures(sql)?;
     let table_name = cap[1].to_lowercase();
     tables.iter().find(|t| t.name == table_name)
 }
 
-fn resolve_returning_columns(sql: &str, table: Option<&TableDef>) -> Option<Vec<ColumnDef>> {
-    let re = Regex::new(r"(?i)\bRETURNING\s+([\s\S]+?)(?:;?\s*)$").unwrap();
-    let cap = re.captures(sql)?;
-    let cols_part = cap[1].trim();
-
-    if cols_part == "*" {
-        return Some(table.map(|t| t.columns.clone()).unwrap_or_default());
-    }
-
-    let table = table?;
-    Some(
-        cols_part
-            .split(',')
-            .map(|s| {
-                let name = s.trim().to_lowercase();
-                table
-                    .columns
-                    .iter()
-                    .find(|c| c.name == name)
-                    .cloned()
-                    .unwrap_or_else(|| make_unknown_column(&name))
-            })
-            .collect(),
-    )
-}
-
 fn resolve_return_columns(sql: &str, table: Option<&TableDef>) -> Vec<ColumnDef> {
-    // Check RETURNING clause first
-    if let Some(returning) = resolve_returning_columns(sql, table) {
-        return returning;
-    }
-
     let select_re = Regex::new(r"(?i)^\s*SELECT\b").unwrap();
     if !select_re.is_match(sql) {
         return Vec::new();
@@ -534,7 +519,7 @@ fn resolve_return_columns(sql: &str, table: Option<&TableDef>) -> Vec<ColumnDef>
     };
 
     let col_names: Vec<&str> = cols_part.split(',').map(|s| s.trim()).collect();
-    let alias_re = Regex::new(r"(?i)^(\w+)\s+as\s+(\w+)$").unwrap();
+    let alias_re = Regex::new(r"(?i)^`?(\w+)`?\s+as\s+`?(\w+)`?$").unwrap();
 
     col_names
         .iter()
@@ -554,12 +539,13 @@ fn resolve_return_columns(sql: &str, table: Option<&TableDef>) -> Vec<ColumnDef>
                     })
                     .unwrap_or_else(|| make_unknown_column(actual))
             } else {
+                let name = expr_lower.trim_matches('`');
                 table
                     .columns
                     .iter()
-                    .find(|c| c.name == expr_lower)
+                    .find(|c| c.name == name)
                     .cloned()
-                    .unwrap_or_else(|| make_unknown_column(&expr_lower))
+                    .unwrap_or_else(|| make_unknown_column(name))
             }
         })
         .collect()
@@ -581,6 +567,18 @@ fn make_unknown_column(name: &str) -> ColumnDef {
         },
         nullable: true,
         has_default: false,
+    }
+}
+
+fn make_unknown_type() -> SqlType {
+    SqlType {
+        raw: "unknown".to_string(),
+        normalized: "unknown".to_string(),
+        category: SqlTypeCategory::Unknown,
+        element_type: None,
+        enum_name: None,
+        enum_values: None,
+        json_shape: None,
     }
 }
 
@@ -628,34 +626,21 @@ fn build_params(sql: &str, comments: &str, table: Option<&TableDef>) -> Vec<Para
         .collect()
 }
 
-fn make_unknown_type() -> SqlType {
-    SqlType {
-        raw: "unknown".to_string(),
-        normalized: "unknown".to_string(),
-        category: SqlTypeCategory::Unknown,
-        element_type: None,
-        enum_name: None,
-        enum_values: None,
-        json_shape: None,
-    }
-}
-
 // ── Public API ───────────────────────────────────────────────────────────────
 
-pub struct PostgresParser;
+pub struct MySqlParser;
 
-impl PostgresParser {
+impl MySqlParser {
     pub fn new() -> Self {
         Self
     }
 }
 
-impl DatabaseParser for PostgresParser {
+impl DatabaseParser for MySqlParser {
     fn parse_schema(&self, sql: &str) -> Result<(Vec<TableDef>, Vec<EnumDef>)> {
-        let enums = parse_enum_defs(sql);
-        let enum_names: HashSet<String> = enums.iter().map(|e| e.name.clone()).collect();
-        let tables = parse_schema_tables(sql, &enum_names);
-        Ok((tables, enums))
+        // MySQL has no standalone CREATE TYPE ... AS ENUM; enums are inline on columns
+        let tables = parse_schema_tables(sql);
+        Ok((tables, Vec::new()))
     }
 
     fn parse_queries(
@@ -665,7 +650,7 @@ impl DatabaseParser for PostgresParser {
         enums: &[EnumDef],
         source_file: &str,
     ) -> Result<Vec<QueryDef>> {
-        let _ = enums; // available for future use
+        let _ = enums;
         let blocks = split_query_blocks(sql);
         let mut queries = Vec::new();
 
@@ -700,203 +685,117 @@ impl DatabaseParser for PostgresParser {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ir::SqlTypeCategory;
+    use crate::ir::{QueryCommand, SqlTypeCategory};
     use crate::parser::DatabaseParser;
 
-    const SCHEMA_SQL: &str = include_str!("../../../../tests/fixtures/schema.sql");
-    const QUERIES_SQL: &str = include_str!("../../../../tests/fixtures/queries/users.sql");
-
-    #[test]
-    fn parses_enum_type() {
-        let parser = PostgresParser::new();
-        let (_, enums) = parser.parse_schema(SCHEMA_SQL).unwrap();
-        assert_eq!(enums.len(), 1);
-        assert_eq!(enums[0].name, "user_status");
-        assert_eq!(enums[0].values, vec!["active", "inactive", "banned"]);
-    }
+    const SCHEMA_SQL: &str = include_str!("../../../../tests/fixtures/mysql_schema.sql");
+    const QUERIES_SQL: &str = include_str!("../../../../tests/fixtures/mysql_queries/users.sql");
 
     #[test]
     fn parses_users_table() {
-        let parser = PostgresParser::new();
+        let parser = MySqlParser::new();
         let (tables, _) = parser.parse_schema(SCHEMA_SQL).unwrap();
         let users = tables.iter().find(|t| t.name == "users").unwrap();
-        assert_eq!(users.columns.len(), 7);
+        assert_eq!(users.columns.len(), 11);
         assert_eq!(users.primary_key, vec!["id"]);
+        let id = &users.columns[0];
+        assert_eq!(id.sql_type.category, SqlTypeCategory::Number);
+        assert!(id.has_default); // AUTO_INCREMENT
+    }
 
-        let id_col = &users.columns[0];
-        assert_eq!(id_col.name, "id");
-        assert_eq!(id_col.sql_type.category, SqlTypeCategory::Number);
-        assert!(id_col.has_default); // SERIAL has implicit default
-        assert!(!id_col.nullable);
+    #[test]
+    fn parses_inline_enum() {
+        let parser = MySqlParser::new();
+        let (tables, _) = parser.parse_schema(SCHEMA_SQL).unwrap();
+        let users = tables.iter().find(|t| t.name == "users").unwrap();
+        let role = users.columns.iter().find(|c| c.name == "role").unwrap();
+        assert_eq!(role.sql_type.category, SqlTypeCategory::Enum);
+        assert_eq!(
+            role.sql_type.enum_values,
+            Some(vec!["admin".into(), "user".into(), "guest".into()])
+        );
+    }
 
-        let bio_col = users.columns.iter().find(|c| c.name == "bio").unwrap();
-        assert!(bio_col.nullable);
+    #[test]
+    fn parses_tinyint_as_boolean() {
+        let parser = MySqlParser::new();
+        let (tables, _) = parser.parse_schema(SCHEMA_SQL).unwrap();
+        let users = tables.iter().find(|t| t.name == "users").unwrap();
+        let active = users.columns.iter().find(|c| c.name == "is_active").unwrap();
+        assert_eq!(active.sql_type.category, SqlTypeCategory::Boolean);
+    }
 
-        let tags_col = users.columns.iter().find(|c| c.name == "tags").unwrap();
-        assert!(tags_col.sql_type.element_type.is_some());
+    #[test]
+    fn parses_json_column() {
+        let parser = MySqlParser::new();
+        let (tables, _) = parser.parse_schema(SCHEMA_SQL).unwrap();
+        let users = tables.iter().find(|t| t.name == "users").unwrap();
+        let prefs = users.columns.iter().find(|c| c.name == "preferences").unwrap();
+        assert_eq!(prefs.sql_type.category, SqlTypeCategory::Json);
+        assert!(prefs.nullable);
+    }
+
+    #[test]
+    fn parses_blob_as_binary() {
+        let parser = MySqlParser::new();
+        let (tables, _) = parser.parse_schema(SCHEMA_SQL).unwrap();
+        let users = tables.iter().find(|t| t.name == "users").unwrap();
+        let avatar = users.columns.iter().find(|c| c.name == "avatar").unwrap();
+        assert_eq!(avatar.sql_type.category, SqlTypeCategory::Binary);
+    }
+
+    #[test]
+    fn parses_generated_column_as_default() {
+        let parser = MySqlParser::new();
+        let (tables, _) = parser.parse_schema(SCHEMA_SQL).unwrap();
+        let users = tables.iter().find(|t| t.name == "users").unwrap();
+        let full_name = users.columns.iter().find(|c| c.name == "full_name").unwrap();
+        assert!(full_name.has_default);
     }
 
     #[test]
     fn parses_posts_table() {
-        let parser = PostgresParser::new();
+        let parser = MySqlParser::new();
         let (tables, _) = parser.parse_schema(SCHEMA_SQL).unwrap();
         let posts = tables.iter().find(|t| t.name == "posts").unwrap();
         assert_eq!(posts.columns.len(), 6);
     }
 
     #[test]
-    fn parses_get_user_query() {
-        let parser = PostgresParser::new();
+    fn parses_query_with_positional_params() {
+        let parser = MySqlParser::new();
         let (tables, enums) = parser.parse_schema(SCHEMA_SQL).unwrap();
         let queries = parser
-            .parse_queries(QUERIES_SQL, &tables, &enums, "queries/users.sql")
+            .parse_queries(QUERIES_SQL, &tables, &enums, "mysql_queries/users.sql")
             .unwrap();
         let get_user = queries.iter().find(|q| q.name == "GetUser").unwrap();
         assert_eq!(get_user.command, QueryCommand::One);
         assert_eq!(get_user.params.len(), 1);
         assert_eq!(get_user.params[0].name, "id");
-        assert_eq!(get_user.returns.len(), 7); // SELECT * returns all columns
+        assert_eq!(get_user.returns.len(), 11);
     }
 
     #[test]
-    fn parses_list_users_partial_select() {
-        let parser = PostgresParser::new();
+    fn parses_insert_params() {
+        let parser = MySqlParser::new();
         let (tables, enums) = parser.parse_schema(SCHEMA_SQL).unwrap();
         let queries = parser
-            .parse_queries(QUERIES_SQL, &tables, &enums, "queries/users.sql")
+            .parse_queries(QUERIES_SQL, &tables, &enums, "mysql_queries/users.sql")
             .unwrap();
-        let list_users = queries.iter().find(|q| q.name == "ListUsers").unwrap();
-        assert_eq!(list_users.command, QueryCommand::Many);
-        assert_eq!(list_users.returns.len(), 3); // SELECT id, name, email
-    }
-
-    #[test]
-    fn parses_create_user_exec() {
-        let parser = PostgresParser::new();
-        let (tables, enums) = parser.parse_schema(SCHEMA_SQL).unwrap();
-        let queries = parser
-            .parse_queries(QUERIES_SQL, &tables, &enums, "queries/users.sql")
-            .unwrap();
-        let create_user = queries.iter().find(|q| q.name == "CreateUser").unwrap();
-        assert_eq!(create_user.command, QueryCommand::Exec);
-        assert_eq!(create_user.params.len(), 3);
-        assert!(create_user.returns.is_empty());
-    }
-
-    #[test]
-    fn parses_delete_user_execresult() {
-        let parser = PostgresParser::new();
-        let (tables, enums) = parser.parse_schema(SCHEMA_SQL).unwrap();
-        let queries = parser
-            .parse_queries(QUERIES_SQL, &tables, &enums, "queries/users.sql")
-            .unwrap();
-        let delete_user = queries.iter().find(|q| q.name == "DeleteUser").unwrap();
-        assert_eq!(delete_user.command, QueryCommand::ExecResult);
+        let create = queries.iter().find(|q| q.name == "CreateUser").unwrap();
+        assert_eq!(create.command, QueryCommand::Exec);
+        assert_eq!(create.params.len(), 3);
     }
 
     #[test]
     fn parses_param_overrides() {
-        let parser = PostgresParser::new();
+        let parser = MySqlParser::new();
         let (tables, enums) = parser.parse_schema(SCHEMA_SQL).unwrap();
         let queries = parser
-            .parse_queries(QUERIES_SQL, &tables, &enums, "queries/users.sql")
+            .parse_queries(QUERIES_SQL, &tables, &enums, "mysql_queries/users.sql")
             .unwrap();
-        let date_range = queries
-            .iter()
-            .find(|q| q.name == "ListUsersByDateRange")
-            .unwrap();
-        assert_eq!(date_range.params[0].name, "start_date");
-        assert_eq!(date_range.params[1].name, "end_date");
-    }
-
-    #[test]
-    fn resolve_type_maps_common_types() {
-        let enums = HashSet::new();
-
-        let text = resolve_sql_type("TEXT", &enums);
-        assert_eq!(text.category, SqlTypeCategory::String);
-
-        let int = resolve_sql_type("INTEGER", &enums);
-        assert_eq!(int.category, SqlTypeCategory::Number);
-
-        let bool_t = resolve_sql_type("BOOLEAN", &enums);
-        assert_eq!(bool_t.category, SqlTypeCategory::Boolean);
-
-        let ts = resolve_sql_type("TIMESTAMP", &enums);
-        assert_eq!(ts.category, SqlTypeCategory::Date);
-
-        let json = resolve_sql_type("JSONB", &enums);
-        assert_eq!(json.category, SqlTypeCategory::Json);
-
-        let uuid = resolve_sql_type("UUID", &enums);
-        assert_eq!(uuid.category, SqlTypeCategory::Uuid);
-
-        let bytea = resolve_sql_type("BYTEA", &enums);
-        assert_eq!(bytea.category, SqlTypeCategory::Binary);
-    }
-
-    #[test]
-    fn resolve_type_array() {
-        let enums = HashSet::new();
-        let arr = resolve_sql_type("TEXT[]", &enums);
-        assert_eq!(arr.category, SqlTypeCategory::String);
-        assert!(arr.element_type.is_some());
-        assert_eq!(
-            arr.element_type.unwrap().category,
-            SqlTypeCategory::String
-        );
-    }
-
-    #[test]
-    fn resolve_type_enum() {
-        let mut enums = HashSet::new();
-        enums.insert("user_status".to_string());
-        let t = resolve_sql_type("user_status", &enums);
-        assert_eq!(t.category, SqlTypeCategory::Enum);
-        assert_eq!(t.enum_name, Some("user_status".to_string()));
-    }
-
-    #[test]
-    fn infer_insert_params() {
-        let sql = "INSERT INTO users (name, email, bio) VALUES ($1, $2, $3)";
-        let cols = infer_param_columns(sql);
-        assert_eq!(cols.get(&1), Some(&"name".to_string()));
-        assert_eq!(cols.get(&2), Some(&"email".to_string()));
-        assert_eq!(cols.get(&3), Some(&"bio".to_string()));
-    }
-
-    #[test]
-    fn infer_where_params() {
-        let sql = "SELECT * FROM users WHERE id = $1";
-        let cols = infer_param_columns(sql);
-        assert_eq!(cols.get(&1), Some(&"id".to_string()));
-    }
-
-    #[test]
-    fn split_query_blocks_basic() {
-        let blocks = split_query_blocks(
-            "-- name: GetUser :one\nSELECT * FROM users WHERE id = $1;\n\n-- name: ListUsers :many\nSELECT id, name FROM users;",
-        );
-        assert_eq!(blocks.len(), 2);
-        assert_eq!(blocks[0].name, "GetUser");
-        assert_eq!(blocks[1].name, "ListUsers");
-    }
-
-    #[test]
-    fn resolve_parser_postgres() {
-        let parser = crate::parser::resolve_parser("postgres");
-        assert!(parser.is_ok());
-    }
-
-    #[test]
-    fn resolve_parser_mysql() {
-        let parser = crate::parser::resolve_parser("mysql");
-        assert!(parser.is_ok());
-    }
-
-    #[test]
-    fn resolve_parser_unknown() {
-        let parser = crate::parser::resolve_parser("sqlite");
-        assert!(parser.is_err());
+        let dr = queries.iter().find(|q| q.name == "ListUsersByDateRange").unwrap();
+        assert_eq!(dr.params[0].name, "start_date");
+        assert_eq!(dr.params[1].name, "end_date");
     }
 }

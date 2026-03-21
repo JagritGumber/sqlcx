@@ -1,3 +1,4 @@
+pub mod mysql;
 pub mod postgres;
 
 use crate::error::Result;
@@ -17,6 +18,7 @@ pub trait DatabaseParser {
 pub fn resolve_parser(name: &str) -> Result<Box<dyn DatabaseParser>> {
     match name {
         "postgres" => Ok(Box::new(postgres::PostgresParser::new())),
+        "mysql" => Ok(Box::new(mysql::MySqlParser::new())),
         _ => Err(crate::error::SqlcxError::UnknownParser(name.to_string())),
     }
 }

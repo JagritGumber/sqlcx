@@ -13,6 +13,54 @@ Expand sqlcx from 1x1x1x1 (Postgres/TypeScript/TypeBox/Bun.sql) to 2x1x3x2, addi
 - Shared utility extraction
 - TypeScript type-check verification infrastructure
 
+## 0. Prerequisite: Refactor TypeScriptPlugin to Use Trait Dispatch
+
+The current `TypeScriptPlugin::generate()` hard-codes `TypeBoxGenerator` and `BunSqlGenerator` directly — it does not use the `SchemaGenerator`/`DriverGenerator` traits. Before adding new plugins, refactor to use trait-based dispatch:
+
+1. **Make `TypeBoxGenerator` implement `SchemaGenerator` trait** (currently it has ad-hoc methods `generate_schema_file()`)
+2. **Make `BunSqlGenerator` implement `DriverGenerator` trait** (currently it has ad-hoc methods `generate_client()` and `generate_query_functions()`)
+3. **Add resolver functions** inside `typescript/mod.rs`:
+
+```rust
+fn resolve_schema(name: &str) -> Result<Box<dyn SchemaGenerator>> {
+    match name {
+        "typebox" => Ok(Box::new(TypeBoxGenerator)),
+        "zod" => Ok(Box::new(ZodGenerator)),
+        "zod/v3" => Ok(Box::new(ZodV3Generator)),
+        _ => Err(SqlcxError::UnknownSchema(name.to_string())),
+    }
+}
+
+fn resolve_driver(name: &str) -> Result<Box<dyn DriverGenerator>> {
+    match name {
+        "bun-sql" => Ok(Box::new(BunSqlGenerator)),
+        "pg" => Ok(Box::new(PgGenerator)),
+        _ => Err(SqlcxError::UnknownDriver(name.to_string())),
+    }
+}
+```
+
+4. **Update `TypeScriptPlugin::generate()`** to call resolvers:
+
+```rust
+impl LanguagePlugin for TypeScriptPlugin {
+    fn generate(&self, ir: &SqlcxIR, config: &TargetConfig) -> Result<Vec<GeneratedFile>> {
+        let schema_gen = resolve_schema(&self.schema_name)?;
+        let driver_gen = resolve_driver(&self.driver_name)?;
+        let overrides = config.overrides(); // wire through from config
+
+        let mut files = Vec::new();
+        files.push(schema_gen.generate(ir, &overrides)?);          // schema.ts
+        files.extend(driver_gen.generate(ir)?);                     // client.ts + query files
+        Ok(files)
+    }
+}
+```
+
+5. **Wire `overrides` from config** — currently `TypeScriptPlugin::generate()` creates `HashMap::new()` instead of reading from config. Add an `overrides()` method to `TargetConfig` or pass `config.overrides` from the CLI level through to the plugin.
+
+**The `DriverGenerator` trait signature** is `fn generate(&self, ir: &SqlcxIR) -> Result<Vec<GeneratedFile>>` — it returns multiple files (client.ts + one .queries.ts per source file). The driver owns both client adapter generation and query function generation.
+
 ## 1. Shared Utilities Extraction
 
 Extract duplicated helpers from `typebox.rs` and `bun_sql.rs` into a new `utils.rs`:
@@ -21,7 +69,7 @@ Extract duplicated helpers from `typebox.rs` and `bun_sql.rs` into a new `utils.
 // crates/sqlcx-core/src/utils.rs
 pub fn pascal_case(s: &str) -> String       // snake_case → PascalCase
 pub fn camel_case(s: &str) -> String        // snake_case → camelCase
-pub fn split_words(s: &str) -> String       // PascalCase → snake_case splitter
+pub fn split_words(s: &str) -> String       // Insert underscores between camelCase/PascalCase words (e.g., "GetUser" → "get_user") — used before pascal_case/camel_case for re-casing
 pub fn escape_string(s: &str) -> String     // JSON.stringify-style escaping for TS strings
 ```
 
@@ -31,7 +79,7 @@ Existing generators updated to `use crate::utils::*`. No behavior change — jus
 
 New file: `crates/sqlcx-core/src/parser/mysql.rs`
 
-Implements `DatabaseParser` trait for MySQL 8.0+. Same regex-based approach as the Postgres parser.
+Implements `DatabaseParser` trait for MySQL 8.0+. Uses regex-based parsing (same approach as the current Postgres parser implementation, which also uses regex despite the base spec mentioning sqlparser-rs). The `sqlparser-rs` crate supports MySQL dialect and could be used as an alternative, but regex is proven and consistent with the Postgres parser.
 
 ### MySQL vs Postgres differences
 
@@ -77,6 +125,55 @@ MySQL uses `?` positional placeholders instead of `$1, $2`. The parser:
 - `GENERATED ALWAYS AS` columns (treated as `has_default = true`)
 - Standard CREATE TABLE syntax with backtick quoting
 - Inline `ENUM('val1', 'val2')` on columns
+
+### MySQL Test Fixtures
+
+**`tests/fixtures/mysql_schema.sql`:**
+```sql
+CREATE TABLE users (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  name VARCHAR(255) NOT NULL,
+  email VARCHAR(255) NOT NULL UNIQUE,
+  bio TEXT,
+  role ENUM('admin', 'user', 'guest') NOT NULL DEFAULT 'user',
+  preferences JSON,
+  is_active TINYINT(1) NOT NULL DEFAULT 1,
+  avatar BLOB,
+  score DECIMAL(10, 2) UNSIGNED,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  full_name VARCHAR(255) GENERATED ALWAYS AS (CONCAT(name, ' ', email)) STORED
+);
+
+CREATE TABLE posts (
+  id BIGINT AUTO_INCREMENT PRIMARY KEY,
+  user_id INT NOT NULL,
+  title VARCHAR(255) NOT NULL,
+  body LONGTEXT NOT NULL,
+  published TINYINT(1) NOT NULL DEFAULT 0,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (user_id) REFERENCES users(id)
+);
+```
+
+**`tests/fixtures/mysql_queries/users.sql`:**
+```sql
+-- name: GetUser :one
+SELECT * FROM users WHERE id = ?;
+
+-- name: ListUsers :many
+SELECT id, name, email FROM users WHERE name LIKE ?;
+
+-- name: CreateUser :exec
+INSERT INTO users (name, email, bio) VALUES (?, ?, ?);
+
+-- name: DeleteUser :execresult
+DELETE FROM users WHERE id = ?;
+
+-- name: ListUsersByDateRange :many
+-- @param $1 start_date
+-- @param $2 end_date
+SELECT * FROM users WHERE created_at > ? AND created_at < ?;
+```
 
 ### Config
 
@@ -144,7 +241,7 @@ export type UserStatus = Prettify<z.infer<typeof UserStatus>>;
 
 ### Zod v3 output (`schema = "zod/v3"`)
 
-Nearly identical to v4 for our use case. Uses `z.object()` and `z.infer` which work in both versions. The split exists so we can diverge as v4 evolves.
+The v3 generator produces identical output to v4 for our current use case — `z.object()`, `z.enum()`, `z.infer` all work the same in both versions. The key difference: v3 uses `z.instanceof(Uint8Array)` for Binary (available in v3), while v4 uses `z.custom<Uint8Array>()` (since `z.instanceof` was removed in v4). The two generators exist as separate files so we can diverge as v4's API evolves without breaking v3 users.
 
 ### Type mapping (SqlTypeCategory → Zod)
 
@@ -156,7 +253,7 @@ Nearly identical to v4 for our use case. Uses `z.object()` and `z.infer` which w
 | Date | `z.date()` |
 | Json | `z.unknown()` (or `@json` shape → `z.object({...})`) |
 | Uuid | `z.string().uuid()` |
-| Binary | `z.instanceof(Uint8Array)` |
+| Binary | v4: `z.custom<Uint8Array>()`, v3: `z.instanceof(Uint8Array)` |
 | Enum (named) | `PascalCase(enum_name)` reference |
 | Enum (@enum) | `z.enum(["a", "b"])` |
 | Unknown | `z.unknown()` |
@@ -177,18 +274,7 @@ Optional: `.optional()`
 
 ### Resolver update
 
-Schema resolution happens inside `TypeScriptPlugin`. The plugin needs to resolve schema by name:
-
-```rust
-fn resolve_schema(name: &str) -> Result<Box<dyn SchemaGenerator>> {
-    match name {
-        "typebox" => Ok(Box::new(TypeBoxGenerator)),
-        "zod" => Ok(Box::new(ZodGenerator)),
-        "zod/v3" => Ok(Box::new(ZodV3Generator)),
-        _ => Err(SqlcxError::UnknownSchema(name.to_string())),
-    }
-}
-```
+New match arms added to `resolve_schema()` in `typescript/mod.rs` (defined in Section 0).
 
 ## 4. pg Driver Generator
 
@@ -229,21 +315,20 @@ export class PgClient implements DatabaseClient {
 }
 ```
 
-Query functions are identical in structure to Bun.sql — same interfaces, same SQL constants, same async functions. Only the client adapter differs.
+Query functions have the same interface structure as Bun.sql (same row/params interfaces, same SQL constants) but the function bodies differ — pg uses `pool.query(text, values)` while Bun.sql uses `sql.unsafe(text, values)`. Example:
+
+```typescript
+// pg version
+export async function getUser(client: DatabaseClient, params: GetUserParams): Promise<GetUserRow | null> {
+  return client.queryOne<GetUserRow>(getUserSql, [params.id]);
+}
+```
+
+The `DatabaseClient` interface is identical across drivers — only the adapter class implementation differs. Query functions call the interface methods, not the driver directly.
 
 ### Resolver update
 
-Driver resolution happens inside `TypeScriptPlugin`:
-
-```rust
-fn resolve_driver(name: &str) -> Result<Box<dyn DriverGenerator>> {
-    match name {
-        "bun-sql" => Ok(Box::new(BunSqlGenerator)),
-        "pg" => Ok(Box::new(PgGenerator)),
-        _ => Err(SqlcxError::UnknownDriver(name.to_string())),
-    }
-}
-```
+New match arm added to `resolve_driver()` in `typescript/mod.rs` (defined in Section 0).
 
 ### Config
 
@@ -270,9 +355,10 @@ tests/typecheck/
   "devDependencies": {
     "@sinclair/typebox": "^0.34",
     "zod": "^4",
+    "zod3": "npm:zod@^3",
     "pg": "^8",
     "@types/pg": "^8",
-    "typescript": "^5.9"
+    "typescript": "^5"
   }
 }
 ```
@@ -300,7 +386,9 @@ For each schema+driver combo, the test:
 2. Runs `npx tsc --noEmit --project tests/typecheck/tsconfig.json`
 3. Asserts exit code 0
 
-If npm/bun is not available, the test is skipped (not failed). This catches:
+**Snapshot tests:** Each new generator (Zod v4, Zod v3, pg) also gets `insta` snapshot tests, same as TypeBox and Bun.sql. These verify the generated output format; the `tsc` tests verify the output actually compiles.
+
+If npm/bun is not available, the `tsc` test is skipped (not failed). This catches:
 - Wrong import paths
 - Incorrect TypeBox/Zod/pg API usage
 - Type mismatches in generated interfaces

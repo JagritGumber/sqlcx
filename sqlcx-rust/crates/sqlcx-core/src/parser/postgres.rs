@@ -895,8 +895,14 @@ mod tests {
     }
 
     #[test]
-    fn resolve_parser_unknown() {
+    fn resolve_parser_sqlite() {
         let parser = crate::parser::resolve_parser("sqlite");
+        assert!(parser.is_ok());
+    }
+
+    #[test]
+    fn resolve_parser_unknown() {
+        let parser = crate::parser::resolve_parser("oracle");
         assert!(parser.is_err());
     }
 }

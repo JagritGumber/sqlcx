@@ -1,5 +1,8 @@
 pub mod typebox;
 pub mod bun_sql;
+pub mod zod;
+pub mod zod_v3;
+pub mod pg;
 
 use crate::error::{Result, SqlcxError};
 use crate::config::TargetConfig;
@@ -8,6 +11,7 @@ use crate::ir::SqlcxIR;
 
 use self::typebox::TypeBoxGenerator;
 use self::bun_sql::BunSqlGenerator;
+use self::pg::PgGenerator;
 
 pub struct TypeScriptPlugin {
     pub schema_name: String,
@@ -26,6 +30,8 @@ impl TypeScriptPlugin {
 fn resolve_schema(name: &str) -> Result<Box<dyn SchemaGenerator>> {
     match name {
         "typebox" => Ok(Box::new(TypeBoxGenerator)),
+        "zod" => Ok(Box::new(zod::ZodGenerator)),
+        "zod/v3" => Ok(Box::new(zod_v3::ZodV3Generator)),
         _ => Err(SqlcxError::UnknownSchema(name.to_string())),
     }
 }
@@ -33,6 +39,7 @@ fn resolve_schema(name: &str) -> Result<Box<dyn SchemaGenerator>> {
 fn resolve_driver(name: &str) -> Result<Box<dyn DriverGenerator>> {
     match name {
         "bun-sql" => Ok(Box::new(BunSqlGenerator)),
+        "pg" => Ok(Box::new(PgGenerator)),
         _ => Err(SqlcxError::UnknownDriver(name.to_string())),
     }
 }

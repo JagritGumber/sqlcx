@@ -44,14 +44,6 @@ fn resolve_driver(name: &str) -> Result<Box<dyn DriverGenerator>> {
     }
 }
 
-fn join_path(base: &str, filename: &str) -> String {
-    if base.ends_with('/') {
-        format!("{}{}", base, filename)
-    } else {
-        format!("{}/{}", base, filename)
-    }
-}
-
 impl LanguagePlugin for TypeScriptPlugin {
     fn generate(&self, ir: &SqlcxIR, config: &TargetConfig) -> Result<Vec<GeneratedFile>> {
         let schema_gen = resolve_schema(&self.schema_name)?;
@@ -60,17 +52,11 @@ impl LanguagePlugin for TypeScriptPlugin {
 
         let mut files = Vec::new();
 
-        // Schema file
-        let mut schema_file = schema_gen.generate(ir, overrides)?;
-        schema_file.path = join_path(&config.out, &schema_file.path);
-        files.push(schema_file);
+        // Schema file (path is just "schema.ts" — CLI handles output directory)
+        files.push(schema_gen.generate(ir, overrides)?);
 
-        // Driver files (client.ts + *.queries.ts)
-        let driver_files = driver_gen.generate(ir)?;
-        for mut f in driver_files {
-            f.path = join_path(&config.out, &f.path);
-            files.push(f);
-        }
+        // Driver files (client.ts + *.queries.ts — simple filenames)
+        files.extend(driver_gen.generate(ir)?);
 
         Ok(files)
     }
@@ -108,8 +94,9 @@ mod tests {
         };
         let files = plugin.generate(&ir, &config).unwrap();
         assert_eq!(files.len(), 3);
-        assert!(files.iter().any(|f| f.path.ends_with("schema.ts")));
-        assert!(files.iter().any(|f| f.path.ends_with("client.ts")));
-        assert!(files.iter().any(|f| f.path.ends_with("users.queries.ts")));
+        // Paths are simple filenames — CLI handles output directory placement
+        assert!(files.iter().any(|f| f.path == "schema.ts"));
+        assert!(files.iter().any(|f| f.path == "client.ts"));
+        assert!(files.iter().any(|f| f.path == "users.queries.ts"));
     }
 }

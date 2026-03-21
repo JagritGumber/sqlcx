@@ -265,7 +265,7 @@ pub fn extract_annotations(sql: &str) -> (String, Annotations) { ... }
 - `TIMESTAMP`, `DATE`, `TIME` → Date
 - `JSON`, `JSONB` → Json
 - `UUID` → Uuid
-- `BYTEA` → ByteArray
+- `BYTEA` → Binary
 - `TEXT[]`, `INT[]` → Array with element_type
 - Named types → look up in parsed enums → Enum
 

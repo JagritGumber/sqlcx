@@ -1,4 +1,5 @@
 pub mod annotations;
+pub mod cache;
 pub mod config;
 pub mod error;
 pub mod generator;

@@ -1,0 +1,10 @@
+{
+  "private": true,
+  "devDependencies": {
+    "@sinclair/typebox": "^0.34",
+    "zod": "^4",
+    "pg": "^8",
+    "@types/pg": "^8",
+    "typescript": "^5"
+  }
+}

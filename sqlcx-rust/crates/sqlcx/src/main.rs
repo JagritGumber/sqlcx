@@ -86,8 +86,12 @@ fn run_pipeline(write_output: bool) -> sqlcx_core::error::Result<()> {
 
     if write_output {
         for target in &config.targets {
-            let plugin = resolve_language(&target.language, &target.schema, &target.driver)?;
-            let files = plugin.generate(&ir, target)?;
+            let mut merged_target = target.clone();
+            for (k, v) in &config.overrides {
+                merged_target.overrides.entry(k.clone()).or_insert(v.clone());
+            }
+            let plugin = resolve_language(&merged_target.language, &merged_target.schema, &merged_target.driver)?;
+            let files = plugin.generate(&ir, &merged_target)?;
             let out_dir = resolve_path(&cwd, &target.out);
             std::fs::create_dir_all(&out_dir)?;
             for file in files {

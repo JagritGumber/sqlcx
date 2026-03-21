@@ -1,13 +1,10 @@
 pub mod typebox;
 pub mod bun_sql;
 
-use std::collections::HashMap;
-use std::path::Path;
-
-use crate::error::Result;
+use crate::error::{Result, SqlcxError};
 use crate::config::TargetConfig;
-use crate::generator::{GeneratedFile, LanguagePlugin};
-use crate::ir::{QueryDef, SqlcxIR};
+use crate::generator::{GeneratedFile, LanguagePlugin, SchemaGenerator, DriverGenerator};
+use crate::ir::SqlcxIR;
 
 use self::typebox::TypeBoxGenerator;
 use self::bun_sql::BunSqlGenerator;
@@ -26,6 +23,20 @@ impl TypeScriptPlugin {
     }
 }
 
+fn resolve_schema(name: &str) -> Result<Box<dyn SchemaGenerator>> {
+    match name {
+        "typebox" => Ok(Box::new(TypeBoxGenerator)),
+        _ => Err(SqlcxError::UnknownSchema(name.to_string())),
+    }
+}
+
+fn resolve_driver(name: &str) -> Result<Box<dyn DriverGenerator>> {
+    match name {
+        "bun-sql" => Ok(Box::new(BunSqlGenerator)),
+        _ => Err(SqlcxError::UnknownDriver(name.to_string())),
+    }
+}
+
 fn join_path(base: &str, filename: &str) -> String {
     if base.ends_with('/') {
         format!("{}{}", base, filename)
@@ -36,45 +47,22 @@ fn join_path(base: &str, filename: &str) -> String {
 
 impl LanguagePlugin for TypeScriptPlugin {
     fn generate(&self, ir: &SqlcxIR, config: &TargetConfig) -> Result<Vec<GeneratedFile>> {
+        let schema_gen = resolve_schema(&self.schema_name)?;
+        let driver_gen = resolve_driver(&self.driver_name)?;
+        let overrides = &config.overrides;
+
         let mut files = Vec::new();
-        let overrides = HashMap::new();
 
-        // 1. Generate schema.ts
-        let typebox = TypeBoxGenerator;
-        let schema_content = typebox.generate_schema_file(ir, &overrides);
-        files.push(GeneratedFile {
-            path: join_path(&config.out, "schema.ts"),
-            content: schema_content,
-        });
+        // Schema file
+        let mut schema_file = schema_gen.generate(ir, overrides)?;
+        schema_file.path = join_path(&config.out, &schema_file.path);
+        files.push(schema_file);
 
-        // 2. Generate client.ts
-        let bun_sql = BunSqlGenerator;
-        let client_content = bun_sql.generate_client();
-        files.push(GeneratedFile {
-            path: join_path(&config.out, "client.ts"),
-            content: client_content,
-        });
-
-        // 3. Generate query files — group queries by source_file
-        let mut grouped: HashMap<String, Vec<&QueryDef>> = HashMap::new();
-        for query in &ir.queries {
-            grouped.entry(query.source_file.clone()).or_default().push(query);
-        }
-
-        for (source_file, queries) in &grouped {
-            let basename = Path::new(source_file)
-                .file_stem()
-                .unwrap_or_default()
-                .to_string_lossy();
-            let filename = format!("{}.queries.ts", basename);
-
-            let owned_queries: Vec<QueryDef> = queries.iter().map(|q| (*q).clone()).collect();
-            let content = bun_sql.generate_query_functions(&owned_queries);
-
-            files.push(GeneratedFile {
-                path: join_path(&config.out, &filename),
-                content,
-            });
+        // Driver files (client.ts + *.queries.ts)
+        let driver_files = driver_gen.generate(ir)?;
+        for mut f in driver_files {
+            f.path = join_path(&config.out, &f.path);
+            files.push(f);
         }
 
         Ok(files)
@@ -84,6 +72,7 @@ impl LanguagePlugin for TypeScriptPlugin {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::HashMap;
     use crate::parser::postgres::PostgresParser;
     use crate::parser::DatabaseParser;
     use crate::generator::LanguagePlugin;
@@ -108,6 +97,7 @@ mod tests {
             out: "./src/db".to_string(),
             schema: "typebox".to_string(),
             driver: "bun-sql".to_string(),
+            overrides: HashMap::new(),
         };
         let files = plugin.generate(&ir, &config).unwrap();
         assert_eq!(files.len(), 3);

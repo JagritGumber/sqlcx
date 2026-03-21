@@ -31,6 +31,7 @@ fn full_pipeline_fixture_snapshot() {
         out: "./src/db".to_string(),
         schema: "typebox".to_string(),
         driver: "bun-sql".to_string(),
+        overrides: std::collections::HashMap::new(),
     };
     let files = plugin.generate(&ir, &config).unwrap();
 

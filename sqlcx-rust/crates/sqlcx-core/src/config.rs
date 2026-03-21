@@ -18,6 +18,8 @@ pub struct TargetConfig {
     pub out: String,
     pub schema: String,
     pub driver: String,
+    #[serde(default)]
+    pub overrides: HashMap<String, String>,
 }
 
 /// Load config from a directory by auto-detecting sqlcx.toml or sqlcx.json.

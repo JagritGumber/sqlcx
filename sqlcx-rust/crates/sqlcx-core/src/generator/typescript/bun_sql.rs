@@ -1,6 +1,11 @@
 // Bun.sql driver generator
 
-use crate::ir::{QueryCommand, QueryDef, SqlType, SqlTypeCategory};
+use std::collections::HashMap;
+use std::path::Path;
+
+use crate::error::Result;
+use crate::generator::{DriverGenerator, GeneratedFile};
+use crate::ir::{QueryCommand, QueryDef, SqlType, SqlTypeCategory, SqlcxIR};
 use crate::utils::{camel_case, pascal_case};
 
 pub struct BunSqlGenerator;
@@ -181,6 +186,37 @@ export class BunSqlClient implements DatabaseClient {
             return format!("{header}\n");
         }
         format!("{header}\n\n{}", functions.join("\n\n"))
+    }
+}
+
+impl DriverGenerator for BunSqlGenerator {
+    fn generate(&self, ir: &SqlcxIR) -> Result<Vec<GeneratedFile>> {
+        let mut files = Vec::new();
+
+        // client.ts
+        files.push(GeneratedFile {
+            path: "client.ts".to_string(),
+            content: self.generate_client(),
+        });
+
+        // Group queries by source_file → one .queries.ts per file
+        let mut grouped: HashMap<String, Vec<&QueryDef>> = HashMap::new();
+        for query in &ir.queries {
+            grouped.entry(query.source_file.clone()).or_default().push(query);
+        }
+        for (source_file, queries) in &grouped {
+            let basename = Path::new(source_file)
+                .file_stem()
+                .unwrap_or_default()
+                .to_string_lossy();
+            let owned: Vec<QueryDef> = queries.iter().map(|q| (*q).clone()).collect();
+            files.push(GeneratedFile {
+                path: format!("{}.queries.ts", basename),
+                content: self.generate_query_functions(&owned),
+            });
+        }
+
+        Ok(files)
     }
 }
 

@@ -1,0 +1,18 @@
+[package]
+name = "sqlcx"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "SQL-first cross-language type-safe code generator — CLI"
+
+[[bin]]
+name = "sqlcx"
+path = "src/main.rs"
+
+[dependencies]
+sqlcx-core = { path = "../sqlcx-core" }
+clap = { version = "4", features = ["derive"] }
+glob = "0.3"
+
+[dev-dependencies]
+tempfile = "3"

@@ -1,0 +1,7 @@
+{
+  "private": true,
+  "devDependencies": {
+    "zod": "^3",
+    "typescript": "^5"
+  }
+}

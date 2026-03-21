@@ -1,0 +1,9 @@
+{
+  "name": "@sqlcx/linux-arm64-gnu",
+  "version": "1.0.0",
+  "description": "sqlcx binary for Linux ARM64",
+  "os": ["linux"],
+  "cpu": ["arm64"],
+  "bin": { "sqlcx": "bin/sqlcx" },
+  "license": "MIT"
+}

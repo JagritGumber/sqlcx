@@ -1,0 +1,9 @@
+{
+  "name": "@sqlcx/darwin-arm64",
+  "version": "1.0.0",
+  "description": "sqlcx binary for macOS Apple Silicon",
+  "os": ["darwin"],
+  "cpu": ["arm64"],
+  "bin": { "sqlcx": "bin/sqlcx" },
+  "license": "MIT"
+}

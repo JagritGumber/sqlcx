@@ -1,0 +1,58 @@
+---
+source: crates/sqlcx-core/src/generator/typescript/zod.rs
+assertion_line: 214
+expression: file.content
+---
+import { z } from "zod";
+
+type Prettify<T> = { [K in keyof T]: T[K] } & {};
+
+export const UserStatus = z.enum(["active", "inactive", "banned"]);
+
+export const SelectUsers = z.object({
+  "id": z.number(),
+  "name": z.string(),
+  "email": z.string(),
+  "bio": z.string().nullable(),
+  "status": UserStatus,
+  "tags": z.array(z.string()).nullable(),
+  "created_at": z.date()
+});
+
+export const InsertUsers = z.object({
+  "id": z.number().optional(),
+  "name": z.string(),
+  "email": z.string(),
+  "bio": z.string().nullable().optional(),
+  "status": UserStatus.optional(),
+  "tags": z.array(z.string()).nullable().optional(),
+  "created_at": z.date().optional()
+});
+
+export const SelectPosts = z.object({
+  "id": z.number(),
+  "user_id": z.number(),
+  "title": z.string(),
+  "body": z.string(),
+  "published": z.boolean(),
+  "created_at": z.date()
+});
+
+export const InsertPosts = z.object({
+  "id": z.number().optional(),
+  "user_id": z.number(),
+  "title": z.string(),
+  "body": z.string(),
+  "published": z.boolean().optional(),
+  "created_at": z.date().optional()
+});
+
+export type SelectUsers = Prettify<z.infer<typeof SelectUsers>>;
+
+export type InsertUsers = Prettify<z.infer<typeof InsertUsers>>;
+
+export type SelectPosts = Prettify<z.infer<typeof SelectPosts>>;
+
+export type InsertPosts = Prettify<z.infer<typeof InsertPosts>>;
+
+export type UserStatus = Prettify<z.infer<typeof UserStatus>>;

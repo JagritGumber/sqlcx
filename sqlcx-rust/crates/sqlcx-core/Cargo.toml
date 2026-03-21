@@ -1,0 +1,21 @@
+[package]
+name = "sqlcx-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "SQL-first cross-language type-safe code generator — core library"
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+sqlparser = { version = "0.53", features = ["visitor"] }
+sha2 = "0.10"
+toml = "0.8"
+glob = "0.3"
+tempfile = "3"
+regex = "1"
+schemars = "0.8"
+
+[dev-dependencies]
+insta = { version = "1", features = ["json"] }

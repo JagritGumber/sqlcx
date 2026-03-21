@@ -79,6 +79,8 @@ pub struct SqlcxIR {
 pub struct TableDef {
     pub name: String,
     pub columns: Vec<ColumnDef>,
+    pub primary_key: Vec<String>,
+    pub unique_constraints: Vec<Vec<String>>,
 }
 
 pub struct ColumnDef {
@@ -100,8 +102,15 @@ pub struct SqlType {
     pub json_shape: Option<JsonShape>,
 }
 
+// Serde renames match the TS string union values for identical JSON output
+#[serde(rename_all = "lowercase")]
 pub enum SqlTypeCategory {
-    String, Number, Boolean, Date, Json, Uuid, ByteArray, Array, Enum, Unknown,
+    String, Number, Boolean, Date, Json, Uuid,
+    #[serde(rename = "binary")]
+    Binary,
+    Enum, Unknown,
+    // Note: no Array variant — arrays are indicated by element_type being Some(...)
+    // matching the TS behavior where category is the element's category
 }
 
 pub struct QueryDef {
@@ -126,12 +135,18 @@ pub struct EnumDef {
     pub values: Vec<String>,
 }
 
+// Tagged union with "kind" discriminator to match TS JsonShape serialization
+#[serde(tag = "kind", rename_all = "lowercase")]
 pub enum JsonShape {
-    Object(Vec<JsonField>),
-    Array(Box<JsonShape>),
-    Primitive(JsonPrimitive),
-    Nullable(Box<JsonShape>),
+    Object { fields: HashMap<String, JsonShape> },
+    Array { element: Box<JsonShape> },
+    String,
+    Number,
+    Boolean,
+    Nullable { inner: Box<JsonShape> },
 }
+
+pub type Overrides = HashMap<String, String>;
 ```
 
 **Memory design:**
@@ -323,9 +338,8 @@ pub struct TargetConfig {
 }
 ```
 
-**TOML example (`sqlcx.toml`):**
+**TOML example (`sqlcx.toml`):** (no nesting — top-level keys)
 ```toml
-[sqlcx]
 sql = "./sql"
 parser = "postgres"
 
@@ -492,6 +506,11 @@ Estimated binary size: ~2-4MB stripped.
 - Config: TOML + JSON with JSON Schema
 - Distribution: npm, PyPI, crates.io, Homebrew, GitHub Releases
 - Caching: SHA-256 content hash
+
+**v1 limitations (supported with caveats):**
+- JOIN queries: supported with explicit column aliases required (no bare `SELECT *` on JOINs)
+- `SELECT *` on single tables: fully supported (expanded via schema)
+- `schema` CLI command is new (not in TS version) — emits JSON Schema for config validation
 
 **Out of scope (designed for, not built in v1):**
 - Python/Go/Rust codegen

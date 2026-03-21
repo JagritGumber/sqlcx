@@ -1,0 +1,16 @@
+{
+  "name": "sqlcx-orm",
+  "version": "1.0.0",
+  "description": "SQL-first cross-language type-safe code generator",
+  "bin": { "sqlcx": "bin/sqlcx" },
+  "optionalDependencies": {
+    "@sqlcx/darwin-arm64": "1.0.0",
+    "@sqlcx/darwin-x64": "1.0.0",
+    "@sqlcx/linux-x64-gnu": "1.0.0",
+    "@sqlcx/linux-arm64-gnu": "1.0.0",
+    "@sqlcx/win32-x64-msvc": "1.0.0"
+  },
+  "repository": { "type": "git", "url": "https://github.com/JagritGumber/sqlcx" },
+  "license": "MIT",
+  "keywords": ["sql", "codegen", "typescript", "typebox", "type-safe"]
+}

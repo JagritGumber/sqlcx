@@ -1,0 +1,41 @@
+#!/usr/bin/env node
+
+const { execFileSync } = require("child_process");
+const os = require("os");
+const path = require("path");
+
+const PLATFORMS = {
+  "darwin-arm64": "@sqlcx/darwin-arm64",
+  "darwin-x64": "@sqlcx/darwin-x64",
+  "linux-x64": "@sqlcx/linux-x64-gnu",
+  "linux-arm64": "@sqlcx/linux-arm64-gnu",
+  "win32-x64": "@sqlcx/win32-x64-msvc",
+};
+
+const key = `${os.platform()}-${os.arch()}`;
+const pkg = PLATFORMS[key];
+
+if (!pkg) {
+  console.error(`Unsupported platform: ${key}`);
+  console.error(`Supported: ${Object.keys(PLATFORMS).join(", ")}`);
+  process.exit(1);
+}
+
+let binPath;
+try {
+  const pkgDir = path.dirname(require.resolve(`${pkg}/package.json`));
+  const ext = os.platform() === "win32" ? ".exe" : "";
+  binPath = path.join(pkgDir, `bin/sqlcx${ext}`);
+} catch {
+  console.error(`Could not find ${pkg}. Try reinstalling: npm install sqlcx-orm`);
+  process.exit(1);
+}
+
+try {
+  execFileSync(binPath, process.argv.slice(2), { stdio: "inherit" });
+} catch (e) {
+  if (e.status !== undefined) {
+    process.exit(e.status);
+  }
+  throw e;
+}

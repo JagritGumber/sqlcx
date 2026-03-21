@@ -1,5 +1,6 @@
 pub mod mysql;
 pub mod postgres;
+pub mod sqlite;
 
 use crate::error::Result;
 use crate::ir::{EnumDef, QueryDef, TableDef};
@@ -19,6 +20,7 @@ pub fn resolve_parser(name: &str) -> Result<Box<dyn DatabaseParser>> {
     match name {
         "postgres" => Ok(Box::new(postgres::PostgresParser::new())),
         "mysql" => Ok(Box::new(mysql::MySqlParser::new())),
+        "sqlite" => Ok(Box::new(sqlite::SqliteParser::new())),
         _ => Err(crate::error::SqlcxError::UnknownParser(name.to_string())),
     }
 }

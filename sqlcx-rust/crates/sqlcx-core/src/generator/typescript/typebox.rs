@@ -1,32 +1,9 @@
 use crate::error::Result;
 use crate::generator::{GeneratedFile, SchemaGenerator};
 use crate::ir::{ColumnDef, EnumDef, JsonShape, Overrides, SqlType, SqlTypeCategory, SqlcxIR};
+use crate::utils::{escape_string, pascal_case};
 
 pub struct TypeBoxGenerator;
-
-// ── String helpers ────────────────────────────────────────────────────────────
-
-/// Convert snake_case (or any lowercase_underscore) to PascalCase.
-pub fn pascal_case(s: &str) -> String {
-    s.split('_')
-        .filter(|part| !part.is_empty())
-        .map(|part| {
-            let mut chars = part.chars();
-            match chars.next() {
-                None => String::new(),
-                Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
-            }
-        })
-        .collect()
-}
-
-/// Escape a string for embedding in a JS/TS double-quoted literal.
-/// Mirrors: JSON.stringify(str).slice(1, -1)
-pub fn escape_string(s: &str) -> String {
-    let serialized = serde_json::to_string(s).unwrap_or_else(|_| format!("\"{}\"", s));
-    // Strip the outer quotes that serde_json adds
-    serialized[1..serialized.len() - 1].to_string()
-}
 
 // ── Type mapping ──────────────────────────────────────────────────────────────
 

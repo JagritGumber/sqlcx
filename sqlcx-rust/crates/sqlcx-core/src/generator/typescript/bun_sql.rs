@@ -1,46 +1,9 @@
 // Bun.sql driver generator
 
 use crate::ir::{QueryCommand, QueryDef, SqlType, SqlTypeCategory};
+use crate::utils::{camel_case, pascal_case};
 
 pub struct BunSqlGenerator;
-
-// ── Case utilities ────────────────────────────────────────────────────────────
-
-/// Split PascalCase/camelCase words by inserting underscores before capital letters.
-fn split_words(s: &str) -> String {
-    let mut out = String::with_capacity(s.len() + 4);
-    let chars: Vec<char> = s.chars().collect();
-    for (i, &c) in chars.iter().enumerate() {
-        if c.is_uppercase() && i > 0 && chars[i - 1].is_lowercase() {
-            out.push('_');
-        }
-        out.push(c);
-    }
-    out
-}
-
-fn pascal_case(s: &str) -> String {
-    split_words(s)
-        .split('_')
-        .filter(|w| !w.is_empty())
-        .map(|w| {
-            let mut c = w.chars();
-            match c.next() {
-                None => String::new(),
-                Some(f) => f.to_uppercase().collect::<String>() + c.as_str(),
-            }
-        })
-        .collect()
-}
-
-fn camel_case(s: &str) -> String {
-    let p = pascal_case(s);
-    let mut c = p.chars();
-    match c.next() {
-        None => String::new(),
-        Some(f) => f.to_lowercase().collect::<String>() + c.as_str(),
-    }
-}
 
 // ── Type mapping ──────────────────────────────────────────────────────────────
 

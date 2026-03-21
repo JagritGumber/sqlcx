@@ -199,8 +199,8 @@ impl DriverGenerator for BunSqlGenerator {
             content: self.generate_client(),
         });
 
-        // Group queries by source_file → one .queries.ts per file
-        let mut grouped: HashMap<String, Vec<&QueryDef>> = HashMap::new();
+        // Group queries by source_file → one .queries.ts per file (BTreeMap for deterministic order)
+        let mut grouped: std::collections::BTreeMap<String, Vec<&QueryDef>> = std::collections::BTreeMap::new();
         for query in &ir.queries {
             grouped.entry(query.source_file.clone()).or_default().push(query);
         }

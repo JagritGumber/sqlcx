@@ -32,7 +32,17 @@ fn json_shape_to_typebox(shape: &JsonShape) -> String {
     }
 }
 
-pub fn type_box_type(sql_type: &SqlType, _overrides: &Overrides) -> String {
+pub fn type_box_type(sql_type: &SqlType, overrides: &Overrides) -> String {
+    // Check overrides first — e.g., "uuid" → "string" means emit Type.String()
+    if let Some(override_type) = overrides.get(&sql_type.normalized) {
+        return match override_type.as_str() {
+            "string" => "Type.String()".to_string(),
+            "number" => "Type.Number()".to_string(),
+            "boolean" => "Type.Boolean()".to_string(),
+            other => format!("Type.Unknown() /* override: {} */", other),
+        };
+    }
+
     // Inline @enum annotation takes precedence
     if let Some(enum_values) = &sql_type.enum_values {
         let literals = enum_values
@@ -50,7 +60,7 @@ pub fn type_box_type(sql_type: &SqlType, _overrides: &Overrides) -> String {
 
     // Array type
     if let Some(element_type) = &sql_type.element_type {
-        return format!("Type.Array({})", type_box_type(element_type, _overrides));
+        return format!("Type.Array({})", type_box_type(element_type, overrides));
     }
 
     match &sql_type.category {

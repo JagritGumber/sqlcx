@@ -198,7 +198,7 @@ impl DriverGenerator for PgGenerator {
         });
 
         // Group queries by source_file → one .queries.ts per file
-        let mut grouped: HashMap<String, Vec<&QueryDef>> = HashMap::new();
+        let mut grouped: std::collections::BTreeMap<String, Vec<&QueryDef>> = std::collections::BTreeMap::new();
         for query in &ir.queries {
             grouped.entry(query.source_file.clone()).or_default().push(query);
         }

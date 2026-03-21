@@ -425,7 +425,7 @@ fn infer_param_columns(sql: &str) -> HashMap<u32, String> {
 
     // INSERT pattern: INSERT INTO tbl (col1, col2) VALUES (?, ?)
     let insert_re = Regex::new(
-        r"(?i)INSERT\s+INTO\s+\w+\s*\(\s*([\w\s,`]+)\s*\)\s*VALUES\s*\(\s*([?,\s]+)\s*\)",
+        r"(?i)INSERT\s+INTO\s+`?\w+`?\s*\(\s*([\w\s,`]+)\s*\)\s*VALUES\s*\(\s*([?,\s]+)\s*\)",
     )
     .unwrap();
     if let Some(cap) = insert_re.captures(sql) {

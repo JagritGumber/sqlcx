@@ -32,7 +32,17 @@ fn json_shape_to_zod(shape: &JsonShape) -> String {
     }
 }
 
-fn zod_type(sql_type: &SqlType, _overrides: &Overrides) -> String {
+fn zod_type(sql_type: &SqlType, overrides: &Overrides) -> String {
+    // Check overrides first
+    if let Some(override_type) = overrides.get(&sql_type.normalized) {
+        return match override_type.as_str() {
+            "string" => "z.string()".to_string(),
+            "number" => "z.number()".to_string(),
+            "boolean" => "z.boolean()".to_string(),
+            other => format!("z.unknown() /* override: {} */", other),
+        };
+    }
+
     // Inline @enum annotation takes precedence
     if let Some(enum_values) = &sql_type.enum_values {
         let literals = enum_values
@@ -50,7 +60,7 @@ fn zod_type(sql_type: &SqlType, _overrides: &Overrides) -> String {
 
     // Array type
     if let Some(element_type) = &sql_type.element_type {
-        return format!("z.array({})", zod_type(element_type, _overrides));
+        return format!("z.array({})", zod_type(element_type, overrides));
     }
 
     match &sql_type.category {

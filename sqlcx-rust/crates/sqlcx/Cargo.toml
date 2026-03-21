@@ -12,3 +12,7 @@ path = "src/main.rs"
 [dependencies]
 sqlcx-core = { path = "../sqlcx-core" }
 clap = { version = "4", features = ["derive"] }
+glob = "0.3"
+
+[dev-dependencies]
+tempfile = "3"

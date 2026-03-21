@@ -541,7 +541,9 @@ name = "sqlcx"
 version = "1.0.0"
 dependencies = [
  "clap",
+ "glob",
  "sqlcx-core",
+ "tempfile",
 ]
 
 [[package]]

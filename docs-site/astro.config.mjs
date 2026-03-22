@@ -6,8 +6,7 @@ export default defineConfig({
   integrations: [
     starlight({
       title: 'sqlcx',
-      // TODO: Add logo once banner.png is created in Task 2
-      // logo: { src: './src/assets/banner.png', replacesTitle: true },
+      logo: { src: './src/assets/banner.png', replacesTitle: true },
       favicon: '/icon.png',
       social: {
         github: 'https://github.com/JagritGumber/sqlcx',

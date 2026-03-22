@@ -3,15 +3,85 @@ title: sqlcx
 description: SQL-first. Every language. Zero runtime.
 template: splash
 hero:
-  tagline: Write SQL once, generate type-safe code for TypeScript, Go, Rust, and Python.
-  actions:
-    - text: Get Started
-      link: /getting-started/quick-start/
-      icon: right-arrow
-    - text: View on GitHub
-      link: https://github.com/JagritGumber/sqlcx
-      variant: minimal
-      icon: external
+  tagline: ""
+  actions: []
 ---
 
-Placeholder — will be replaced in Task 3.
+import Hero from '../../components/Hero.astro';
+import ComparisonTable from '../../components/ComparisonTable.astro';
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+<Hero />
+
+<div style="max-width: 48rem; margin: 0 auto; padding: 0 1rem;">
+
+## Install
+
+<Tabs>
+  <TabItem label="npm">
+    ```bash
+    npm install sqlcx-orm
+    ```
+  </TabItem>
+  <TabItem label="cargo">
+    ```bash
+    cargo install sqlcx
+    ```
+  </TabItem>
+  <TabItem label="pip">
+    ```bash
+    pip install sqlcx  # coming soon
+    ```
+  </TabItem>
+  <TabItem label="brew">
+    ```bash
+    brew install sqlcx  # coming soon
+    ```
+  </TabItem>
+</Tabs>
+
+## Zero runtime overhead
+
+<ComparisonTable />
+
+## SQL in, type-safe code out
+
+<Tabs>
+  <TabItem label="SQL Input">
+    ```sql
+    -- name: GetUser :one
+    SELECT * FROM users WHERE id = $1;
+
+    -- name: ListUsers :many
+    SELECT id, name, email FROM users
+    WHERE name ILIKE $1;
+
+    -- name: CreateUser :exec
+    INSERT INTO users (name, email, bio)
+    VALUES ($1, $2, $3);
+    ```
+  </TabItem>
+  <TabItem label="TypeScript Output">
+    ```typescript
+    import { Type, type Static } from "@sinclair/typebox";
+
+    export const UsersSelect = Type.Object({
+      id: Type.Number(),
+      name: Type.String(),
+      email: Type.String(),
+      bio: Type.Union([Type.String(), Type.Null()]),
+      status: Type.Union([
+        Type.Literal("active"),
+        Type.Literal("inactive"),
+        Type.Literal("banned"),
+      ]),
+      tags: Type.Array(Type.String()),
+      created_at: Type.Date(),
+    });
+
+    export type UsersSelect = Static<typeof UsersSelect>;
+    ```
+  </TabItem>
+</Tabs>
+
+</div>

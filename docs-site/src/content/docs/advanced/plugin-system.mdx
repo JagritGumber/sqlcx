@@ -1,0 +1,149 @@
+---
+title: Plugin System
+description: The four traits that make sqlcx's parser and generator pipeline extensible.
+---
+
+sqlcx's pipeline is built on four Rust traits. Each trait has a single, narrow responsibility. Combining them in the right order turns raw SQL into typed code.
+
+---
+
+## The Pipeline
+
+```
+SQL files
+  └─ DatabaseParser  → IR (tables, queries, enums)
+       └─ LanguagePlugin
+            ├─ SchemaGenerator  → schema file  (TypeBox, Zod, Go structs, …)
+            └─ DriverGenerator  → client file  (Bun.sql, pg, sqlx, …)
+```
+
+1. A `DatabaseParser` reads SQL text and produces IR.
+2. A `LanguagePlugin` receives IR and delegates to a `SchemaGenerator` and a `DriverGenerator`.
+3. Each generator writes one or more `GeneratedFile` values to disk.
+
+---
+
+## Trait Definitions
+
+### `DatabaseParser`
+
+Parses raw SQL for a specific database dialect.
+
+```rust
+pub trait DatabaseParser {
+    fn parse_schema(&self, sql: &str) -> Result<(Vec<TableDef>, Vec<EnumDef>)>;
+    fn parse_queries(
+        &self,
+        sql: &str,
+        tables: &[TableDef],
+        enums: &[EnumDef],
+        source_file: &str,
+    ) -> Result<Vec<QueryDef>>;
+}
+```
+
+`parse_schema` handles `CREATE TABLE` and `CREATE TYPE` statements.
+`parse_queries` handles annotated `SELECT`/`INSERT`/`UPDATE`/`DELETE` blocks and uses the already-parsed tables to infer column types.
+
+Built-in implementations: `postgres`, `mysql`, `sqlite`.
+
+### `SchemaGenerator`
+
+Generates type and schema definitions from IR.
+
+```rust
+pub trait SchemaGenerator {
+    fn generate(&self, ir: &SqlcxIR, overrides: &Overrides) -> Result<GeneratedFile>;
+}
+```
+
+Returns a single file. The `overrides` map lets users replace inferred types with custom strings (e.g., map `uuid` → `import("./types").UserId`).
+
+Built-in implementations: `typebox`, `zod` (TypeScript); Go struct files; Rust type modules.
+
+### `DriverGenerator`
+
+Generates the database client code that executes queries.
+
+```rust
+pub trait DriverGenerator {
+    fn generate(&self, ir: &SqlcxIR) -> Result<Vec<GeneratedFile>>;
+}
+```
+
+Returns multiple files when needed (e.g., one file per query group). No overrides here — driver output is fully derived from IR.
+
+Built-in implementations: `bun-sql`, `pg` (TypeScript); `database/sql` (Go); `sqlx` (Rust).
+
+### `LanguagePlugin`
+
+Orchestrates schema + driver generation for a target language.
+
+```rust
+pub trait LanguagePlugin {
+    fn generate(&self, ir: &SqlcxIR, config: &TargetConfig) -> Result<Vec<GeneratedFile>>;
+}
+```
+
+The plugin is responsible for calling both generators and returning all output files. It also reads `config` to apply language-specific settings (output directory, file extensions, etc.).
+
+---
+
+## Resolving Plugins at Runtime
+
+Two resolver functions select built-in implementations by name:
+
+```rust
+// Resolve a database parser
+let parser = resolve_parser("postgres")?;
+
+// Resolve a language plugin by language, schema library, and driver
+let plugin = resolve_language("typescript", "typebox", "bun-sql")?;
+```
+
+Supported values:
+
+| Resolver | Valid names |
+|---|---|
+| `resolve_parser` | `"postgres"`, `"mysql"`, `"sqlite"` |
+| `resolve_language` (language) | `"typescript"`, `"go"`, `"rust"` |
+| `resolve_language` (schema) | `"typebox"`, `"zod"` (TS); Go/Rust have one each |
+| `resolve_language` (driver) | `"bun-sql"`, `"pg"` (TS); `"database/sql"` (Go); `"sqlx"` (Rust) |
+
+---
+
+## Compiled-In Architecture
+
+sqlcx does not support dynamic plugin loading (no `.so` / `.dll` at runtime). All parsers and generators are compiled into the binary.
+
+This is a deliberate trade-off:
+
+- **No dependency hell** — plugins cannot bring in conflicting crates.
+- **No runtime panics from ABI mismatches** — the compiler checks everything.
+- **Single binary distribution** — the CLI ships as one self-contained executable.
+
+The cost is that adding a new parser or generator requires a recompile.
+
+---
+
+## Adding a New Parser
+
+1. Create a new module under `sqlcx-core/src/parser/`, e.g. `parser/oracle.rs`.
+2. Implement `DatabaseParser` for your struct.
+3. Add a match arm in `resolve_parser`:
+
+```rust
+pub fn resolve_parser(name: &str) -> Result<Box<dyn DatabaseParser>> {
+    match name {
+        "postgres" => Ok(Box::new(postgres::PostgresParser::new())),
+        "mysql"    => Ok(Box::new(mysql::MySqlParser::new())),
+        "sqlite"   => Ok(Box::new(sqlite::SqliteParser::new())),
+        "oracle"   => Ok(Box::new(oracle::OracleParser::new())), // new
+        _          => Err(SqlcxError::UnknownParser(name.to_string())),
+    }
+}
+```
+
+4. Expose the module in `parser/mod.rs` and rebuild.
+
+The same pattern applies to adding a new `SchemaGenerator`, `DriverGenerator`, or `LanguagePlugin`.

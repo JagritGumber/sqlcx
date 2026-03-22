@@ -1,0 +1,103 @@
+---
+title: Community Plugins
+description: Use the IR JSON to build external generators, and contribute back to core.
+---
+
+sqlcx's IR is a stable JSON format. Any tool that can read a JSON file can act as a generator — no Rust required.
+
+---
+
+## The IR as an Extension Point
+
+After `sqlcx generate` runs, `.sqlcx/ir.json` contains the full parsed IR for your project. External tools can read this file and produce whatever output they need: API clients, mock factories, documentation, migration helpers, or generators for languages sqlcx does not yet support.
+
+The IR schema is described in detail on the [IR Format](/advanced/ir-format) page.
+
+---
+
+## Writing a Custom Generator
+
+The simplest integration is a script that reads `.sqlcx/ir.json` and writes files.
+
+### Example: Python generator
+
+```python
+#!/usr/bin/env python3
+"""
+Custom Python dataclass generator that reads sqlcx IR.
+Usage: python gen_dataclasses.py > out/models.py
+"""
+
+import json
+import sys
+
+CATEGORY_MAP = {
+    "string":  "str",
+    "number":  "int",
+    "boolean": "bool",
+    "date":    "datetime",
+    "uuid":    "str",
+    "json":    "dict",
+    "binary":  "bytes",
+    "enum":    "str",
+    "unknown": "Any",
+}
+
+with open(".sqlcx/ir.json") as f:
+    cache = json.load(f)
+
+ir = cache["ir"]
+
+print("from __future__ import annotations")
+print("from dataclasses import dataclass")
+print("from datetime import datetime")
+print("from typing import Any, Optional")
+print()
+
+for table in ir["tables"]:
+    print("@dataclass")
+    print(f"class {table['name'].title().replace('_', '')}:")
+    for col in table["columns"]:
+        py_type = CATEGORY_MAP.get(col["type"]["category"], "Any")
+        if col["nullable"]:
+            py_type = f"Optional[{py_type}]"
+        print(f"    {col['name']}: {py_type}")
+    print()
+```
+
+Run it after `sqlcx generate`:
+
+```bash
+sqlcx generate && python gen_dataclasses.py > src/models.py
+```
+
+### What the script receives
+
+The top-level `ir` key in `.sqlcx/ir.json` matches the `SqlcxIR` structure:
+
+```
+ir.tables[]   — table definitions with typed columns
+ir.queries[]  — parsed queries with params and return columns
+ir.enums[]    — database enum types with their variant lists
+```
+
+---
+
+## Process-Based Plugin Protocol (Future)
+
+A stdin/stdout JSON protocol for external generators is planned. Under this model, sqlcx will invoke an external binary, write the IR JSON to stdin, and read generated file paths and contents from stdout. This will allow generators in any language without needing to read the cache file directly.
+
+The protocol is not yet stable. Follow the [GitHub repository](https://github.com/jagrit06/sqlcx) for updates.
+
+---
+
+## Contributing to Core
+
+If your generator is useful to others and can be written in Rust, consider contributing it to the sqlcx core:
+
+1. **Read the [Plugin System](/advanced/plugin-system) page** to understand the four traits.
+2. **Implement the trait** — `SchemaGenerator` for type definitions, `DriverGenerator` for client code, or `DatabaseParser` for a new SQL dialect.
+3. **Add tests** — snapshot tests live in `sqlcx-core/src/generator/*/snapshots/`. The existing tests show the expected pattern.
+4. **Open a pull request** with your implementation and a note on which language/driver/dialect it targets.
+
+Contributions that follow the existing code style and include snapshot tests are most likely to be accepted.

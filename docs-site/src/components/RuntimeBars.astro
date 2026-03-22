@@ -1,0 +1,35 @@
+---
+---
+
+<section class="max-w-lg mx-auto px-4 py-16 md:py-24">
+  <h2 class="text-2xl font-bold text-white text-center m-0 mb-10">Zero runtime overhead</h2>
+
+  <div class="flex flex-col gap-4">
+    <!-- sqlcx: 0 KB -->
+    <div class="grid grid-cols-[7rem_1fr_4rem] items-center gap-3">
+      <span class="text-sm font-semibold text-lime text-right">sqlcx</span>
+      <div class="h-3 rounded-full bg-gray-800 relative overflow-hidden">
+        <div class="absolute left-0 top-1/2 -translate-y-1/2 w-2 h-2 rounded-full bg-lime"></div>
+      </div>
+      <span class="text-sm font-mono text-lime tabular-nums">0 KB</span>
+    </div>
+
+    <!-- Drizzle: 7.4 KB -->
+    <div class="grid grid-cols-[7rem_1fr_4rem] items-center gap-3">
+      <span class="text-sm text-gray-400 text-right">Drizzle</span>
+      <div class="h-3 rounded-full bg-gray-800 relative overflow-hidden">
+        <div class="h-full rounded-full bg-gray-600" style="width: 0.5%"></div>
+      </div>
+      <span class="text-sm font-mono text-gray-500 tabular-nums">7.4 KB</span>
+    </div>
+
+    <!-- Prisma: 1.6 MB -->
+    <div class="grid grid-cols-[7rem_1fr_4rem] items-center gap-3">
+      <span class="text-sm text-gray-400 text-right">Prisma</span>
+      <div class="h-3 rounded-full bg-gray-800 relative overflow-hidden">
+        <div class="h-full rounded-full bg-gray-600" style="width: 100%"></div>
+      </div>
+      <span class="text-sm font-mono text-gray-500 tabular-nums">1.6 MB</span>
+    </div>
+  </div>
+</section>

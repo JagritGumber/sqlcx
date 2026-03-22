@@ -1,0 +1,127 @@
+---
+title: Quick Start
+description: Generate your first typed query in under five minutes.
+---
+
+import { Steps, Tabs, TabItem } from '@astrojs/starlight/components';
+
+This guide walks from zero to a fully typed query using TypeScript, Bun SQL, and TypeBox.
+
+<Steps>
+
+1. **Create your project**
+
+   ```bash
+   mkdir myapp && cd myapp
+   npm init -y
+   npm install sqlcx-orm
+   mkdir -p sql/queries
+   ```
+
+2. **Write your schema**
+
+   Create `sql/schema.sql`:
+
+   ```sql
+   CREATE TYPE user_status AS ENUM ('active', 'inactive', 'banned');
+
+   CREATE TABLE users (
+     id        SERIAL PRIMARY KEY,
+     name      TEXT        NOT NULL,
+     email     TEXT        NOT NULL UNIQUE,
+     status    user_status NOT NULL DEFAULT 'active',
+     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+   );
+   ```
+
+3. **Write your queries**
+
+   Create `sql/queries/users.sql`:
+
+   ```sql
+   -- name: GetUser :one
+   SELECT id, name, email, status, created_at
+   FROM users
+   WHERE id = $1;
+
+   -- name: ListUsers :many
+   SELECT id, name, email, status, created_at
+   FROM users
+   ORDER BY created_at DESC;
+
+   -- name: CreateUser :exec
+   INSERT INTO users (name, email)
+   VALUES ($1, $2);
+   ```
+
+4. **Configure sqlcx**
+
+   Create `sqlcx.toml` at the project root:
+
+   ```toml
+   sql     = ["sql/queries"]
+   parser  = "postgres"
+
+   [[targets]]
+   language  = "typescript"
+   out       = "src/generated"
+   schema    = "sql/schema.sql"
+   driver    = "bun-sql"
+
+   [targets.overrides]
+   validation = "typebox"
+   ```
+
+5. **Generate**
+
+   ```bash
+   npx sqlcx generate
+   ```
+
+   sqlcx reads your schema and queries, then writes typed TypeScript files into `src/generated/`.
+
+6. **Use the generated code**
+
+   ```typescript
+   import { sql } from 'bun';
+   import { getUser, listUsers, createUser } from './generated/users';
+
+   // Insert a user
+   await createUser(sql, { name: 'Alice', email: 'alice@example.com' });
+
+   // Fetch a single user — fully typed
+   const user = await getUser(sql, { id: 1 });
+   console.log(user.name, user.status);
+
+   // Fetch all users
+   const users = await listUsers(sql);
+   for (const u of users) {
+     console.log(u.email);
+   }
+   ```
+
+   Every parameter and return value is typed directly from your SQL schema. No type assertions, no `any`.
+
+</Steps>
+
+---
+
+## What was generated?
+
+Running `npx sqlcx generate` produced files like:
+
+```
+src/generated/
+  users.ts        — typed query functions
+  schema.ts       — TypeBox validators for each table
+```
+
+The generated code imports only your database driver. There is no sqlcx runtime dependency at execution time.
+
+---
+
+## Next steps
+
+- [Configuration](/getting-started/configuration) — full reference for `sqlcx.toml`
+- [TypeBox](/typescript/typebox) — using TypeBox validators with the generated schema
+- [Bun SQL](/typescript/bun-sql) — Bun SQL driver details

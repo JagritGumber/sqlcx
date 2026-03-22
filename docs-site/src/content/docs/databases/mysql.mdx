@@ -8,7 +8,6 @@ sqlcx supports MySQL 8.0+ syntax, including inline `ENUM` column definitions, `A
 ## Configuration
 
 ```toml
-[sqlcx]
 parser = "mysql"
 ```
 
@@ -25,11 +24,10 @@ parser = "mysql"
 
 | SQL Type | Generated Type |
 |---|---|
-| `INT`, `INTEGER`, `SMALLINT`, `BIGINT`, `TINYINT` | `integer` |
+| `INT`, `INTEGER`, `SMALLINT`, `MEDIUMINT`, `BIGINT`, `TINYINT`, `FLOAT`, `DOUBLE`, `DECIMAL`, `NUMERIC` | `number` |
 | `TINYINT(1)` | `boolean` |
-| `FLOAT`, `DOUBLE`, `DECIMAL`, `NUMERIC` | `float` |
 | `VARCHAR`, `TEXT`, `CHAR`, `TINYTEXT`, `MEDIUMTEXT`, `LONGTEXT` | `string` |
-| `DATETIME`, `TIMESTAMP` | `datetime` |
+| `DATETIME`, `TIMESTAMP`, `DATE`, `TIME`, `YEAR` | `date` |
 | `JSON` | `json` |
 | `BLOB`, `BINARY`, `VARBINARY`, `TINYBLOB`, `MEDIUMBLOB`, `LONGBLOB` | `binary` |
 | `ENUM('a', 'b', …)` | `enum` |

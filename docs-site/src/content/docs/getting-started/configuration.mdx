@@ -14,7 +14,7 @@ sqlcx reads its configuration from `sqlcx.toml` (preferred) or `sqlcx.json`. Bot
 <Tabs>
   <TabItem label="TOML (preferred)">
     ```toml
-    sql    = ["sql/queries"]
+    sql    = "./sql"
     parser = "postgres"
 
     [[targets]]
@@ -30,7 +30,7 @@ sqlcx reads its configuration from `sqlcx.toml` (preferred) or `sqlcx.json`. Bot
   <TabItem label="JSON">
     ```json
     {
-      "sql": ["sql/queries"],
+      "sql": "./sql",
       "parser": "postgres",
       "targets": [
         {
@@ -57,7 +57,7 @@ Generate TypeScript and Go from the same queries:
 <Tabs>
   <TabItem label="TOML (preferred)">
     ```toml
-    sql    = ["sql/queries"]
+    sql    = "./sql"
     parser = "postgres"
 
     [[targets]]
@@ -79,7 +79,7 @@ Generate TypeScript and Go from the same queries:
   <TabItem label="JSON">
     ```json
     {
-      "sql": ["sql/queries"],
+      "sql": "./sql",
       "parser": "postgres",
       "targets": [
         {
@@ -107,7 +107,7 @@ Generate TypeScript and Go from the same queries:
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `sql` | `string[]` | Yes | Directories containing `.sql` query files |
+| `sql` | `string` | Yes | Path to the directory containing `.sql` query files |
 | `parser` | `string` | Yes | SQL dialect: `postgres`, `mysql`, or `sqlite` |
 | `targets` | `Target[]` | Yes | One or more output targets |
 | `overrides` | `object` | No | Global type overrides applied to all targets |

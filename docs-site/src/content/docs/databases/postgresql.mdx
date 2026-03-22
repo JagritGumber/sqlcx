@@ -8,7 +8,6 @@ sqlcx supports PostgreSQL's rich type system, including custom `ENUM` types, arr
 ## Configuration
 
 ```toml
-[sqlcx]
 parser = "postgres"
 ```
 
@@ -26,14 +25,14 @@ parser = "postgres"
 
 | SQL Type | Generated Type |
 |---|---|
-| `SERIAL`, `INTEGER`, `INT`, `SMALLINT`, `BIGINT` | `integer` |
-| `REAL`, `DOUBLE PRECISION`, `NUMERIC`, `DECIMAL` | `float` |
-| `TEXT`, `VARCHAR`, `CHAR`, `UUID` | `string` |
+| `SERIAL`, `BIGSERIAL`, `INTEGER`, `INT`, `SMALLINT`, `BIGINT`, `REAL`, `DOUBLE PRECISION`, `NUMERIC`, `DECIMAL` | `number` |
+| `TEXT`, `VARCHAR`, `CHAR` | `string` |
+| `UUID` | `uuid` |
 | `BOOLEAN` | `boolean` |
-| `TIMESTAMP`, `TIMESTAMPTZ`, `DATE`, `TIME` | `datetime` |
+| `TIMESTAMP`, `TIMESTAMPTZ`, `DATE`, `TIME` | `date` |
 | `JSONB`, `JSON` | `json` |
 | `BYTEA` | `binary` |
-| `TEXT[]`, `INTEGER[]`, … | `array` |
+| `TEXT[]`, `INTEGER[]`, … | inherits element category (identified by `elementType` field) |
 | Custom `ENUM` type | `enum` |
 
 ## Example Schema
@@ -61,11 +60,11 @@ PostgreSQL ENUMs are declared separately with `CREATE TYPE … AS ENUM (…)`. s
 
 ### Arrays
 
-Array columns such as `TEXT[]` are mapped to the `array` type. The element type is inferred from the base type (e.g., `TEXT[]` → array of strings).
+Array columns such as `TEXT[]` inherit the category of their element type. Arrays are identified in the IR by the presence of an `elementType` field rather than a distinct category name.
 
 ### UUID
 
-`UUID` columns map to `string`. If your target language has a dedicated UUID type, you can configure a custom override in `sqlcx.toml`.
+`UUID` columns map to `uuid` — their own distinct category, separate from `string`. If your target language has a dedicated UUID type, it will be used automatically; you can also configure a custom override in `sqlcx.toml`.
 
 ### JSONB / JSON
 

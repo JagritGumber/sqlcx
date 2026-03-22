@@ -8,7 +8,6 @@ sqlcx supports SQLite's type affinity system. Because SQLite is loosely typed, s
 ## Configuration
 
 ```toml
-[sqlcx]
 parser = "sqlite"
 ```
 
@@ -24,14 +23,13 @@ parser = "sqlite"
 
 | SQL Type / Affinity | Generated Type | Notes |
 |---|---|---|
-| `INTEGER`, `INT`, `BIGINT`, `SMALLINT` | `integer` | INTEGER affinity |
-| `REAL`, `DOUBLE`, `FLOAT` | `float` | REAL affinity |
-| `TEXT`, `VARCHAR`, `CHAR`, `CLOB` | `string` | TEXT affinity |
+| `INTEGER`, `INT`, `BIGINT`, `SMALLINT`, `REAL`, `DOUBLE`, `FLOAT` | `number` | INTEGER / REAL affinity |
+| `TEXT`, `VARCHAR`, `CHAR`, `CLOB`, `NCHAR`, `NVARCHAR` | `string` | TEXT affinity |
 | `BOOLEAN` | `boolean` | Convention (stored as 0/1) |
-| `DATETIME`, `DATE`, `TIMESTAMP` | `datetime` | Convention (stored as TEXT/INTEGER) |
+| `DATETIME`, `DATE`, `TIMESTAMP` | `date` | Convention (stored as TEXT/INTEGER) |
 | `JSON` | `json` | Convention (stored as TEXT) |
 | `BLOB` | `binary` | BLOB affinity |
-| (no type / `NUMERIC`) | `string` | NUMERIC affinity, falls back to string |
+| (no type / `NUMERIC`) | `unknown` | NUMERIC affinity, no clear mapping |
 
 ## Example Schema
 

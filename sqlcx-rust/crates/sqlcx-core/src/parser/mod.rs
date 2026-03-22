@@ -142,7 +142,6 @@ pub(crate) fn split_query_blocks(sql: &str) -> Vec<QueryBlock> {
 }
 
 pub(crate) fn build_params(
-    sql: &str,
     comments: &str,
     table: Option<&TableDef>,
     param_indices: Vec<u32>,

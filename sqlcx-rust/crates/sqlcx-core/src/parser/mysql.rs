@@ -530,7 +530,7 @@ impl DatabaseParser for MySqlParser {
             let table = find_from_table(&block.sql, tables);
             let param_indices = extract_param_indices(&block.sql);
             let inferred_cols = infer_param_columns(&block.sql);
-            let params = build_params(&block.sql, &block.comments, table, param_indices, inferred_cols);
+            let params = build_params(&block.comments, table, param_indices, inferred_cols);
             let returns = resolve_return_columns(&block.sql, table);
 
             let clean_sql = block

@@ -40,14 +40,12 @@ fn run(cli: Cli) -> sqlcx_core::error::Result<()> {
         Commands::Generate => run_pipeline(true),
         Commands::Check => run_pipeline(false),
         Commands::Init => {
-            Err(sqlcx_core::error::SqlcxError::ConfigNotFound(
-                "init command not yet implemented".to_string(),
-            ))
+            eprintln!("error: init command not yet implemented");
+            std::process::exit(1);
         }
         Commands::Schema => {
-            Err(sqlcx_core::error::SqlcxError::ConfigNotFound(
-                "schema command not yet implemented".to_string(),
-            ))
+            eprintln!("error: schema command not yet implemented");
+            std::process::exit(1);
         }
     }
 }

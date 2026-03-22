@@ -1,0 +1,24 @@
+
+export default new Map([
+["src/content/docs/comparison.mdx", () => import("astro:content-layer-deferred-module?astro%3Acontent-layer-deferred-module=&fileName=src%2Fcontent%2Fdocs%2Fcomparison.mdx&astroContentModuleFlag=true")],
+["src/content/docs/index.mdx", () => import("astro:content-layer-deferred-module?astro%3Acontent-layer-deferred-module=&fileName=src%2Fcontent%2Fdocs%2Findex.mdx&astroContentModuleFlag=true")],
+["src/content/docs/advanced/caching.mdx", () => import("astro:content-layer-deferred-module?astro%3Acontent-layer-deferred-module=&fileName=src%2Fcontent%2Fdocs%2Fadvanced%2Fcaching.mdx&astroContentModuleFlag=true")],
+["src/content/docs/advanced/community-plugins.mdx", () => import("astro:content-layer-deferred-module?astro%3Acontent-layer-deferred-module=&fileName=src%2Fcontent%2Fdocs%2Fadvanced%2Fcommunity-plugins.mdx&astroContentModuleFlag=true")],
+["src/content/docs/advanced/plugin-system.mdx", () => import("astro:content-layer-deferred-module?astro%3Acontent-layer-deferred-module=&fileName=src%2Fcontent%2Fdocs%2Fadvanced%2Fplugin-system.mdx&astroContentModuleFlag=true")],
+["src/content/docs/advanced/ir-format.mdx", () => import("astro:content-layer-deferred-module?astro%3Acontent-layer-deferred-module=&fileName=src%2Fcontent%2Fdocs%2Fadvanced%2Fir-format.mdx&astroContentModuleFlag=true")],
+["src/content/docs/cli/check.mdx", () => import("astro:content-layer-deferred-module?astro%3Acontent-layer-deferred-module=&fileName=src%2Fcontent%2Fdocs%2Fcli%2Fcheck.mdx&astroContentModuleFlag=true")],
+["src/content/docs/cli/generate.mdx", () => import("astro:content-layer-deferred-module?astro%3Acontent-layer-deferred-module=&fileName=src%2Fcontent%2Fdocs%2Fcli%2Fgenerate.mdx&astroContentModuleFlag=true")],
+["src/content/docs/cli/schema.mdx", () => import("astro:content-layer-deferred-module?astro%3Acontent-layer-deferred-module=&fileName=src%2Fcontent%2Fdocs%2Fcli%2Fschema.mdx&astroContentModuleFlag=true")],
+["src/content/docs/cli/init.mdx", () => import("astro:content-layer-deferred-module?astro%3Acontent-layer-deferred-module=&fileName=src%2Fcontent%2Fdocs%2Fcli%2Finit.mdx&astroContentModuleFlag=true")],
+["src/content/docs/go/database-sql.mdx", () => import("astro:content-layer-deferred-module?astro%3Acontent-layer-deferred-module=&fileName=src%2Fcontent%2Fdocs%2Fgo%2Fdatabase-sql.mdx&astroContentModuleFlag=true")],
+["src/content/docs/go/structs.mdx", () => import("astro:content-layer-deferred-module?astro%3Acontent-layer-deferred-module=&fileName=src%2Fcontent%2Fdocs%2Fgo%2Fstructs.mdx&astroContentModuleFlag=true")],
+["src/content/docs/getting-started/quick-start.mdx", () => import("astro:content-layer-deferred-module?astro%3Acontent-layer-deferred-module=&fileName=src%2Fcontent%2Fdocs%2Fgetting-started%2Fquick-start.mdx&astroContentModuleFlag=true")],
+["src/content/docs/getting-started/installation.mdx", () => import("astro:content-layer-deferred-module?astro%3Acontent-layer-deferred-module=&fileName=src%2Fcontent%2Fdocs%2Fgetting-started%2Finstallation.mdx&astroContentModuleFlag=true")],
+["src/content/docs/getting-started/why-sqlcx.mdx", () => import("astro:content-layer-deferred-module?astro%3Acontent-layer-deferred-module=&fileName=src%2Fcontent%2Fdocs%2Fgetting-started%2Fwhy-sqlcx.mdx&astroContentModuleFlag=true")],
+["src/content/docs/getting-started/configuration.mdx", () => import("astro:content-layer-deferred-module?astro%3Acontent-layer-deferred-module=&fileName=src%2Fcontent%2Fdocs%2Fgetting-started%2Fconfiguration.mdx&astroContentModuleFlag=true")],
+["src/content/docs/databases/mysql.mdx", () => import("astro:content-layer-deferred-module?astro%3Acontent-layer-deferred-module=&fileName=src%2Fcontent%2Fdocs%2Fdatabases%2Fmysql.mdx&astroContentModuleFlag=true")],
+["src/content/docs/databases/sqlite.mdx", () => import("astro:content-layer-deferred-module?astro%3Acontent-layer-deferred-module=&fileName=src%2Fcontent%2Fdocs%2Fdatabases%2Fsqlite.mdx&astroContentModuleFlag=true")],
+["src/content/docs/databases/postgresql.mdx", () => import("astro:content-layer-deferred-module?astro%3Acontent-layer-deferred-module=&fileName=src%2Fcontent%2Fdocs%2Fdatabases%2Fpostgresql.mdx&astroContentModuleFlag=true")],
+["src/content/docs/rust/serde.mdx", () => import("astro:content-layer-deferred-module?astro%3Acontent-layer-deferred-module=&fileName=src%2Fcontent%2Fdocs%2Frust%2Fserde.mdx&astroContentModuleFlag=true")],
+["src/content/docs/rust/sqlx.mdx", () => import("astro:content-layer-deferred-module?astro%3Acontent-layer-deferred-module=&fileName=src%2Fcontent%2Fdocs%2Frust%2Fsqlx.mdx&astroContentModuleFlag=true")]]);
+		

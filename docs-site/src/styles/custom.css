@@ -1,4 +1,42 @@
-/* Dark mode (default) */
+@layer base, starlight, theme, components, utilities;
+
+@import '@astrojs/starlight-tailwind';
+@import 'tailwindcss/theme.css' layer(theme);
+@import 'tailwindcss/utilities.css' layer(utilities);
+
+/* ── Tailwind v4 theme tokens ── */
+@theme {
+  --color-accent-50: #f6f8e8;
+  --color-accent-100: #edf1d0;
+  --color-accent-200: #e8f0a0;
+  --color-accent-300: #d4e070;
+  --color-accent-400: #c5d96e;
+  --color-accent-500: #a0b840;
+  --color-accent-600: #7a8a20;
+  --color-accent-700: #556010;
+  --color-accent-800: #3d4510;
+  --color-accent-900: #2a3000;
+  --color-accent-950: #1d2200;
+
+  --color-gray-50: #fafafa;
+  --color-gray-100: #f5f5f5;
+  --color-gray-200: #e5e5e5;
+  --color-gray-300: #b0b0b0;
+  --color-gray-400: #888888;
+  --color-gray-500: #666666;
+  --color-gray-600: #444444;
+  --color-gray-700: #333333;
+  --color-gray-800: #1a1a1a;
+  --color-gray-900: #111111;
+  --color-gray-950: #0a0a0a;
+
+  --color-lime: #c5d96e;
+
+  --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+}
+
+/* ── Starlight CSS variable overrides (Starlight reads these directly) ── */
 :root[data-theme='dark'] {
   --sl-color-accent-low: #2a3000;
   --sl-color-accent: #c5d96e;
@@ -11,7 +49,6 @@
   --sl-color-hairline-shade: #2a2a2a;
 }
 
-/* Light mode */
 :root[data-theme='light'] {
   --sl-color-accent-low: #f0f4d4;
   --sl-color-accent: #7a8a20;
@@ -19,12 +56,25 @@
   --sl-color-text-accent: #5a6a10;
 }
 
-/* Typography */
-:root {
-  --sl-font: 'Inter', system-ui, -apple-system, sans-serif;
-  --sl-font-system-mono: 'JetBrains Mono', ui-monospace, monospace;
-}
-
+/* ── Structural overrides (targeting Starlight internals — must stay as CSS) ── */
 .site-title img {
   height: 2rem;
+}
+
+[data-has-hero] #_top {
+  display: none;
+}
+[data-has-hero] .hero > .sl-flex.stack {
+  display: none;
+}
+
+[data-has-hero] .main-pane,
+[data-has-hero] .content-panel,
+[data-has-hero] .sl-markdown-content,
+[data-has-hero] main,
+[data-has-hero] .main-frame {
+  padding-top: 0 !important;
+  margin-top: 0 !important;
+  padding-block-start: 0 !important;
+  gap: 0 !important;
 }

@@ -1,84 +1,22 @@
 ---
 ---
 
-<div class="comparison-card">
-  <p class="card-title">Runtime bundle size</p>
-  <ul class="comparison-list">
-    <li class="row row--highlighted">
-      <span class="lib-name">sqlcx</span>
-      <span class="lib-size">0 KB</span>
+<div class="bg-gray-800 border border-gray-700 rounded-lg px-6 py-5 max-w-xs mx-auto my-4">
+  <p class="uppercase text-xs tracking-widest text-gray-300 m-0 mb-3">
+    Runtime bundle size
+  </p>
+  <ul class="list-none m-0 p-0 flex flex-col gap-1.5">
+    <li class="flex justify-between items-center px-3 py-2 rounded-md bg-accent-900 border border-accent-200">
+      <span class="text-sm font-bold text-accent-200">sqlcx</span>
+      <span class="text-sm font-semibold text-accent-200 tabular-nums">0 KB</span>
     </li>
-    <li class="row">
-      <span class="lib-name">Drizzle</span>
-      <span class="lib-size">7.4 KB</span>
+    <li class="flex justify-between items-center px-3 py-2 rounded-md border border-transparent">
+      <span class="text-sm font-medium text-white">Drizzle</span>
+      <span class="text-sm text-gray-300 tabular-nums">7.4 KB</span>
     </li>
-    <li class="row">
-      <span class="lib-name">Prisma</span>
-      <span class="lib-size">1.6 MB</span>
+    <li class="flex justify-between items-center px-3 py-2 rounded-md border border-transparent">
+      <span class="text-sm font-medium text-white">Prisma</span>
+      <span class="text-sm text-gray-300 tabular-nums">1.6 MB</span>
     </li>
   </ul>
 </div>
-
-<style>
-  .comparison-card {
-    background-color: var(--sl-color-gray-7);
-    border: 1px solid var(--sl-color-gray-6);
-    border-radius: 0.5rem;
-    padding: 1.25rem 1.5rem;
-    max-width: 20rem;
-    margin: 1rem auto;
-  }
-
-  .card-title {
-    text-transform: uppercase;
-    font-size: 0.7rem;
-    letter-spacing: 0.08em;
-    color: var(--sl-color-gray-3);
-    margin: 0 0 0.875rem;
-  }
-
-  .comparison-list {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 0.375rem;
-  }
-
-  .row {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 0.5rem 0.75rem;
-    border-radius: 0.375rem;
-    border: 1px solid transparent;
-  }
-
-  .row--highlighted {
-    background-color: var(--sl-color-accent-low);
-    border-color: var(--sl-color-accent);
-  }
-
-  .lib-name {
-    font-size: 0.9rem;
-    font-weight: 500;
-    color: var(--sl-color-white);
-  }
-
-  .row--highlighted .lib-name {
-    color: var(--sl-color-accent);
-    font-weight: 700;
-  }
-
-  .lib-size {
-    font-size: 0.85rem;
-    color: var(--sl-color-gray-3);
-    font-variant-numeric: tabular-nums;
-  }
-
-  .row--highlighted .lib-size {
-    color: var(--sl-color-accent);
-    font-weight: 600;
-  }
-</style>

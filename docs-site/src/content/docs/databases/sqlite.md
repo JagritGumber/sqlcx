@@ -1,6 +1,71 @@
 ---
-title: Sqlite
-description: Placeholder for Sqlite.
+title: SQLite
+description: SQLite support in sqlcx — type affinity mapping, AUTOINCREMENT, and conventions for booleans and datetimes.
 ---
 
-Coming soon.
+sqlcx supports SQLite's type affinity system. Because SQLite is loosely typed, sqlcx applies affinity-based mapping rules and follows community conventions for booleans and datetimes.
+
+## Configuration
+
+```toml
+[sqlcx]
+parser = "sqlite"
+```
+
+## Supported Features
+
+- Type affinity mapping (INTEGER, REAL, TEXT, BLOB, NUMERIC)
+- `INTEGER PRIMARY KEY AUTOINCREMENT` (one word — SQLite-specific)
+- `?` positional query parameters
+- Column `DEFAULT` expressions
+- `NOT NULL` constraints
+
+## Type Mapping
+
+| SQL Type / Affinity | Generated Type | Notes |
+|---|---|---|
+| `INTEGER`, `INT`, `BIGINT`, `SMALLINT` | `integer` | INTEGER affinity |
+| `REAL`, `DOUBLE`, `FLOAT` | `float` | REAL affinity |
+| `TEXT`, `VARCHAR`, `CHAR`, `CLOB` | `string` | TEXT affinity |
+| `BOOLEAN` | `boolean` | Convention (stored as 0/1) |
+| `DATETIME`, `DATE`, `TIMESTAMP` | `datetime` | Convention (stored as TEXT/INTEGER) |
+| `JSON` | `json` | Convention (stored as TEXT) |
+| `BLOB` | `binary` | BLOB affinity |
+| (no type / `NUMERIC`) | `string` | NUMERIC affinity, falls back to string |
+
+## Example Schema
+
+```sql
+CREATE TABLE tasks (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  title       TEXT NOT NULL,
+  completed   BOOLEAN NOT NULL DEFAULT 0,
+  due_date    DATETIME,
+  priority    INTEGER NOT NULL DEFAULT 1,
+  notes       TEXT
+);
+```
+
+sqlcx maps `completed` to boolean and `due_date` to datetime by convention, even though SQLite stores both as integers or text internally.
+
+## SQLite-Specific Notes
+
+### No ENUM Support
+
+SQLite has no native `ENUM` type. If you need enumerated values, store them as `TEXT` or `INTEGER` and use a `CHECK` constraint. sqlcx will map the column to `string` or `integer` accordingly — no enum type will be generated.
+
+### BOOLEAN is a Convention
+
+SQLite has no native boolean type. `BOOLEAN` columns are stored as integers (`0` or `1`). sqlcx recognizes the `BOOLEAN` affinity name and maps it to the `boolean` type in generated code, but at the database level it remains an integer.
+
+### DATETIME is a Convention
+
+SQLite stores dates and times as `TEXT` (ISO 8601), `REAL` (Julian day), or `INTEGER` (Unix timestamp). sqlcx maps any column declared as `DATETIME`, `DATE`, or `TIMESTAMP` to the `datetime` type by convention, matching the SQLite documentation's recommended approach.
+
+### AUTOINCREMENT is One Word
+
+SQLite uses `AUTOINCREMENT` (one word, no underscore), unlike MySQL's `AUTO_INCREMENT`. Using `INTEGER PRIMARY KEY` without `AUTOINCREMENT` is also valid and provides auto-increment behavior — sqlcx handles both forms.
+
+### ? Parameters
+
+SQLite uses `?` as its parameter placeholder (same as MySQL). sqlcx generates parameter lists in positional order matching the `?` occurrences in the query.

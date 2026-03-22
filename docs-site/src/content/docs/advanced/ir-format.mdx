@@ -1,0 +1,292 @@
+---
+title: IR Format
+description: The Intermediate Representation JSON that bridges parsers and generators.
+---
+
+The Intermediate Representation (IR) is the JSON contract between sqlcx's parsers and generators. Parsers read SQL and produce IR; generators consume IR and produce code. Nothing else crosses that boundary.
+
+The IR is stored at `.sqlcx/ir.json` when caching is active.
+
+---
+
+## Top-Level Shape
+
+```json
+{
+  "tables": [...],
+  "queries": [...],
+  "enums": [...]
+}
+```
+
+All keys are camelCase. All field names in nested objects follow the same convention.
+
+---
+
+## TableDef
+
+Represents a single `CREATE TABLE` statement.
+
+```json
+{
+  "name": "users",
+  "columns": [...],
+  "primaryKey": ["id"],
+  "uniqueConstraints": [["email"]]
+}
+```
+
+| Field | Type | Description |
+|---|---|---|
+| `name` | `string` | Table name |
+| `columns` | `ColumnDef[]` | Ordered list of columns |
+| `primaryKey` | `string[]` | Column names forming the primary key |
+| `uniqueConstraints` | `string[][]` | Each inner array is one unique constraint |
+
+### ColumnDef
+
+```json
+{
+  "name": "created_at",
+  "type": {
+    "raw": "TIMESTAMPTZ",
+    "normalized": "timestamptz",
+    "category": "date"
+  },
+  "nullable": false,
+  "hasDefault": true
+}
+```
+
+| Field | Type | Description |
+|---|---|---|
+| `name` | `string` | Column name |
+| `alias` | `string?` | Query-level alias (omitted on table columns) |
+| `sourceTable` | `string?` | Origin table when column comes from a JOIN |
+| `type` | `SqlType` | Type descriptor (see below) |
+| `nullable` | `boolean` | Whether the column accepts NULL |
+| `hasDefault` | `boolean` | Whether a DEFAULT expression exists |
+
+---
+
+## SqlType
+
+Every column and parameter carries a `SqlType` object that describes both the raw SQL and its normalized, categorized form.
+
+```json
+{
+  "raw": "VARCHAR(255)",
+  "normalized": "varchar",
+  "category": "string"
+}
+```
+
+### Categories
+
+| Category | SQL examples |
+|---|---|
+| `string` | `text`, `varchar`, `char` |
+| `number` | `int`, `bigint`, `numeric`, `float8` |
+| `boolean` | `boolean`, `bool` |
+| `date` | `timestamp`, `timestamptz`, `date`, `time` |
+| `json` | `json`, `jsonb` |
+| `uuid` | `uuid` |
+| `binary` | `bytea` |
+| `enum` | User-defined enum types |
+| `unknown` | Unrecognized types |
+
+### Optional fields
+
+| Field | When present |
+|---|---|
+| `elementType` | Array types — contains the element's `SqlType` |
+| `enumName` | Enum columns — the enum type name |
+| `enumValues` | Inline enum columns — the variant list |
+| `jsonShape` | Typed JSON columns with a known shape |
+
+---
+
+## QueryDef
+
+Represents one annotated SQL query.
+
+```json
+{
+  "name": "getUserById",
+  "command": "one",
+  "sql": "SELECT id, email FROM users WHERE id = $1",
+  "params": [
+    {
+      "index": 1,
+      "name": "id",
+      "type": { "raw": "int4", "normalized": "int4", "category": "number" }
+    }
+  ],
+  "returns": [
+    {
+      "name": "id",
+      "type": { "raw": "int4", "normalized": "int4", "category": "number" },
+      "nullable": false,
+      "hasDefault": false
+    },
+    {
+      "name": "email",
+      "type": { "raw": "text", "normalized": "text", "category": "string" },
+      "nullable": false,
+      "hasDefault": false
+    }
+  ],
+  "sourceFile": "sql/queries/users.sql"
+}
+```
+
+| Field | Type | Description |
+|---|---|---|
+| `name` | `string` | Query name from the `-- name:` annotation |
+| `command` | `"one" \| "many" \| "exec" \| "execresult"` | Return shape annotation |
+| `sql` | `string` | Normalized SQL text |
+| `params` | `ParamDef[]` | Ordered input parameters |
+| `returns` | `ColumnDef[]` | Result columns (empty for exec/execresult) |
+| `sourceFile` | `string` | Path to the `.sql` file |
+
+### Commands
+
+| Command | Meaning |
+|---|---|
+| `one` | Expects zero or one row |
+| `many` | Expects zero or more rows |
+| `exec` | No rows returned (INSERT/UPDATE/DELETE) |
+| `execresult` | No rows, but returns affected-row count |
+
+### ParamDef
+
+```json
+{
+  "index": 1,
+  "name": "userId",
+  "type": { "raw": "int4", "normalized": "int4", "category": "number" }
+}
+```
+
+`index` is 1-based and corresponds to the `$1`, `$2` placeholder position.
+
+---
+
+## EnumDef
+
+Represents a PostgreSQL `CREATE TYPE ... AS ENUM` or equivalent.
+
+```json
+{
+  "name": "user_role",
+  "values": ["admin", "member", "guest"]
+}
+```
+
+---
+
+## Full Example
+
+Given this schema and query:
+
+```sql
+-- schema.sql
+CREATE TYPE user_role AS ENUM ('admin', 'member');
+
+CREATE TABLE users (
+  id      SERIAL PRIMARY KEY,
+  email   TEXT    NOT NULL UNIQUE,
+  role    user_role NOT NULL DEFAULT 'member'
+);
+```
+
+```sql
+-- queries/users.sql
+-- name: getUserByEmail :one
+SELECT id, email, role FROM users WHERE email = $1;
+```
+
+The IR looks like:
+
+```json
+{
+  "tables": [
+    {
+      "name": "users",
+      "columns": [
+        {
+          "name": "id",
+          "type": { "raw": "SERIAL", "normalized": "serial", "category": "number" },
+          "nullable": false,
+          "hasDefault": true
+        },
+        {
+          "name": "email",
+          "type": { "raw": "TEXT", "normalized": "text", "category": "string" },
+          "nullable": false,
+          "hasDefault": false
+        },
+        {
+          "name": "role",
+          "type": {
+            "raw": "user_role",
+            "normalized": "user_role",
+            "category": "enum",
+            "enumName": "user_role"
+          },
+          "nullable": false,
+          "hasDefault": true
+        }
+      ],
+      "primaryKey": ["id"],
+      "uniqueConstraints": [["email"]]
+    }
+  ],
+  "queries": [
+    {
+      "name": "getUserByEmail",
+      "command": "one",
+      "sql": "SELECT id, email, role FROM users WHERE email = $1",
+      "params": [
+        {
+          "index": 1,
+          "name": "email",
+          "type": { "raw": "text", "normalized": "text", "category": "string" }
+        }
+      ],
+      "returns": [
+        {
+          "name": "id",
+          "type": { "raw": "SERIAL", "normalized": "serial", "category": "number" },
+          "nullable": false,
+          "hasDefault": true
+        },
+        {
+          "name": "email",
+          "type": { "raw": "TEXT", "normalized": "text", "category": "string" },
+          "nullable": false,
+          "hasDefault": false
+        },
+        {
+          "name": "role",
+          "type": {
+            "raw": "user_role",
+            "normalized": "user_role",
+            "category": "enum",
+            "enumName": "user_role"
+          },
+          "nullable": false,
+          "hasDefault": true
+        }
+      ],
+      "sourceFile": "sql/queries/users.sql"
+    }
+  ],
+  "enums": [
+    {
+      "name": "user_role",
+      "values": ["admin", "member"]
+    }
+  ]
+}
+```

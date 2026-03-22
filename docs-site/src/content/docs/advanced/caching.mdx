@@ -1,0 +1,111 @@
+---
+title: Caching
+description: How sqlcx avoids re-parsing SQL files that have not changed.
+---
+
+sqlcx skips the parse step when your SQL files have not changed. This keeps `sqlcx generate` fast in watch mode and in CI caches.
+
+---
+
+## Cache Location
+
+The cache lives at `.sqlcx/ir.json` in your project root. Add `.sqlcx/` to `.gitignore` — it is a local build artifact.
+
+---
+
+## Cache Structure
+
+The file is a JSON object with two fields:
+
+```json
+{
+  "hash": "a3f9c2...",
+  "ir": {
+    "tables": [...],
+    "queries": [...],
+    "enums": [...]
+  }
+}
+```
+
+| Field | Description |
+|---|---|
+| `hash` | SHA-256 fingerprint of all SQL files |
+| `ir` | The full IR produced from the last parse |
+
+---
+
+## How the Hash Is Computed
+
+sqlcx feeds every SQL file into a single SHA-256 digest:
+
+1. Collect all SQL files discovered by the configured `sql_dir` globs.
+2. Sort files by path (ascending, byte order).
+3. For each file, feed `path + NUL + content + NUL` into the hasher.
+4. The final hex digest is the cache key.
+
+Sorting by path makes the hash order-independent — the same set of files always produces the same hash regardless of filesystem iteration order.
+
+---
+
+## Cache Hit vs Miss
+
+```
+sqlcx generate
+  └─ compute hash of SQL files
+       ├─ hash matches .sqlcx/ir.json → skip parse, use cached IR
+       └─ hash differs (or no cache)  → parse SQL, write new cache
+```
+
+A cache miss triggers a full re-parse and rewrites `.sqlcx/ir.json` with the new hash and IR.
+
+---
+
+## Atomic Writes
+
+To prevent a corrupt cache on crash or power loss, sqlcx never writes directly to `ir.json`. Instead:
+
+1. Write JSON to `ir.json.tmp` in the same directory.
+2. Rename `ir.json.tmp` → `ir.json`.
+
+Rename is atomic on all supported operating systems. A partially written temp file is either absent or stale, and will be overwritten on the next run.
+
+---
+
+## When the Cache Is Invalid
+
+The cache self-invalidates whenever SQL content changes. Additional cases that return a cache miss:
+
+| Situation | Behavior |
+|---|---|
+| `.sqlcx/ir.json` does not exist | Miss — fresh parse |
+| File is present but not valid JSON | Miss — treated as corrupt |
+| Hash in file does not match computed hash | Miss — SQL has changed |
+
+---
+
+## Clearing the Cache
+
+Delete the `.sqlcx/` directory:
+
+```bash
+rm -rf .sqlcx
+```
+
+The next `sqlcx generate` will parse from scratch and create a fresh cache.
+
+---
+
+## CI Usage
+
+Cache `.sqlcx/ir.json` by keying on your SQL files:
+
+```yaml
+# GitHub Actions example
+- uses: actions/cache@v4
+  with:
+    path: .sqlcx
+    key: sqlcx-${{ hashFiles('sql/**/*.sql') }}
+```
+
+On a cache hit the parse step is skipped entirely, cutting generation time in large projects.

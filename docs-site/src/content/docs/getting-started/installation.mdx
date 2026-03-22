@@ -1,0 +1,67 @@
+---
+title: Installation
+description: Install the sqlcx CLI and runtime package.
+---
+
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+## Install the CLI
+
+The `sqlcx` CLI reads your SQL schema and query files, then generates typed client code.
+
+<Tabs>
+  <TabItem label="npm">
+    ```bash
+    npm install sqlcx-orm
+    ```
+  </TabItem>
+  <TabItem label="cargo">
+    ```bash
+    cargo install sqlcx
+    ```
+  </TabItem>
+  <TabItem label="pip">
+    ```bash
+    pip install sqlcx  # coming soon
+    ```
+  </TabItem>
+  <TabItem label="brew">
+    ```bash
+    brew install sqlcx  # coming soon
+    ```
+  </TabItem>
+</Tabs>
+
+---
+
+## Verify the install
+
+After installing, confirm the CLI is available:
+
+```bash
+sqlcx --help
+```
+
+Expected output:
+
+```
+sqlcx - SQL-first code generation for every language
+
+Usage: sqlcx <command> [options]
+
+Commands:
+  generate    Generate typed client code from SQL queries
+  check       Verify generated code is up to date
+  init        Create a new sqlcx.toml configuration file
+  schema      Inspect and validate your SQL schema
+
+Options:
+  --help, -h     Show help
+  --version, -v  Show version
+```
+
+---
+
+## Next steps
+
+Continue to [Quick Start](/getting-started/quick-start) to generate your first typed query in under five minutes.

@@ -1,0 +1,161 @@
+---
+title: Configuration
+description: Full reference for sqlcx.toml and sqlcx.json.
+---
+
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+sqlcx reads its configuration from `sqlcx.toml` (preferred) or `sqlcx.json`. Both formats are equivalent.
+
+---
+
+## Basic example
+
+<Tabs>
+  <TabItem label="TOML (preferred)">
+    ```toml
+    sql    = ["sql/queries"]
+    parser = "postgres"
+
+    [[targets]]
+    language = "typescript"
+    out      = "src/generated"
+    schema   = "sql/schema.sql"
+    driver   = "bun-sql"
+
+    [targets.overrides]
+    validation = "typebox"
+    ```
+  </TabItem>
+  <TabItem label="JSON">
+    ```json
+    {
+      "sql": ["sql/queries"],
+      "parser": "postgres",
+      "targets": [
+        {
+          "language": "typescript",
+          "out": "src/generated",
+          "schema": "sql/schema.sql",
+          "driver": "bun-sql",
+          "overrides": {
+            "validation": "typebox"
+          }
+        }
+      ]
+    }
+    ```
+  </TabItem>
+</Tabs>
+
+---
+
+## Multi-target example
+
+Generate TypeScript and Go from the same queries:
+
+<Tabs>
+  <TabItem label="TOML (preferred)">
+    ```toml
+    sql    = ["sql/queries"]
+    parser = "postgres"
+
+    [[targets]]
+    language = "typescript"
+    out      = "clients/ts/generated"
+    schema   = "sql/schema.sql"
+    driver   = "bun-sql"
+
+    [targets.overrides]
+    validation = "typebox"
+
+    [[targets]]
+    language = "go"
+    out      = "clients/go/generated"
+    schema   = "sql/schema.sql"
+    driver   = "database-sql"
+    ```
+  </TabItem>
+  <TabItem label="JSON">
+    ```json
+    {
+      "sql": ["sql/queries"],
+      "parser": "postgres",
+      "targets": [
+        {
+          "language": "typescript",
+          "out": "clients/ts/generated",
+          "schema": "sql/schema.sql",
+          "driver": "bun-sql",
+          "overrides": { "validation": "typebox" }
+        },
+        {
+          "language": "go",
+          "out": "clients/go/generated",
+          "schema": "sql/schema.sql",
+          "driver": "database-sql"
+        }
+      ]
+    }
+    ```
+  </TabItem>
+</Tabs>
+
+---
+
+## Top-level fields
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `sql` | `string[]` | Yes | Directories containing `.sql` query files |
+| `parser` | `string` | Yes | SQL dialect: `postgres`, `mysql`, or `sqlite` |
+| `targets` | `Target[]` | Yes | One or more output targets |
+| `overrides` | `object` | No | Global type overrides applied to all targets |
+
+---
+
+## Target fields
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `language` | `string` | Yes | Output language (see table below) |
+| `out` | `string` | Yes | Directory to write generated files into |
+| `schema` | `string` | Yes | Path to the `.sql` schema file |
+| `driver` | `string` | Yes | Database driver to generate against |
+| `overrides` | `object` | No | Per-target type overrides |
+
+---
+
+## Available generators
+
+| Language | Validation options | Driver options |
+|----------|--------------------|----------------|
+| `typescript` | `typebox`, `zod`, `zod-v3` | `bun-sql`, `pg` |
+| `go` | _(structs only)_ | `database-sql` |
+| `rust` | `serde` | `sqlx` |
+
+---
+
+## Type overrides
+
+Override how sqlcx maps a SQL column type to a language type. Useful for custom domains or `JSONB` columns.
+
+```toml
+[[overrides]]
+db_type  = "pg_catalog.jsonb"
+go_type  = "json.RawMessage"
+
+[[overrides]]
+db_type  = "uuid"
+ts_type  = "string"
+```
+
+Overrides defined at the top level apply to all targets. Overrides inside a `[[targets]]` block apply only to that target.
+
+---
+
+## Next steps
+
+- [Quick Start](/getting-started/quick-start) — see a full working example
+- [TypeBox](/typescript/typebox) — TypeScript validation with TypeBox
+- [Zod](/typescript/zod) — TypeScript validation with Zod

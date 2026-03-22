@@ -1,0 +1,30 @@
+/* Dark mode (default) */
+:root[data-theme='dark'] {
+  --sl-color-accent-low: #2a3000;
+  --sl-color-accent: #c5d96e;
+  --sl-color-accent-high: #e8f0a0;
+  --sl-color-text-accent: #c5d96e;
+  --sl-color-bg: #0a0a0a;
+  --sl-color-bg-sidebar: #111111;
+  --sl-color-bg-nav: #0a0a0a;
+  --sl-color-hairline-light: #1a1a1a;
+  --sl-color-hairline-shade: #2a2a2a;
+}
+
+/* Light mode */
+:root[data-theme='light'] {
+  --sl-color-accent-low: #f0f4d4;
+  --sl-color-accent: #7a8a20;
+  --sl-color-accent-high: #3d4510;
+  --sl-color-text-accent: #5a6a10;
+}
+
+/* Typography */
+:root {
+  --sl-font: 'Inter', system-ui, -apple-system, sans-serif;
+  --sl-font-system-mono: 'JetBrains Mono', ui-monospace, monospace;
+}
+
+.site-title img {
+  height: 2rem;
+}

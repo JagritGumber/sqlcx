@@ -39,7 +39,7 @@ The file is a JSON object with two fields:
 
 sqlcx feeds every SQL file into a single SHA-256 digest:
 
-1. Collect all SQL files discovered by the configured `sql_dir` globs.
+1. Collect all SQL files discovered under the configured `sql` directory.
 2. Sort files by path (ascending, byte order).
 3. For each file, feed `path + NUL + content + NUL` into the hasher.
 4. The final hex digest is the cache key.

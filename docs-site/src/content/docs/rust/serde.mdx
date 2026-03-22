@@ -59,14 +59,16 @@ pub struct Users {
     pub created_at: chrono::NaiveDateTime,
 }
 
-/// Insert type for users — columns with defaults are optional
+/// Insert type for users — columns with defaults become Option<T>
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct InsertUsers {
+    pub id: Option<i32>,
     pub name: String,
     pub email: String,
     pub bio: Option<String>,
     pub status: Option<String>,
     pub tags: Option<Vec<String>>,
+    pub created_at: Option<chrono::NaiveDateTime>,
 }
 ```
 
@@ -120,11 +122,7 @@ pub bio: Option<String>,
 
 ## Insert structs
 
-`InsertUsers` is a separate struct for new rows. It:
-
-- Excludes `id` (auto-increment primary key)
-- Excludes `created_at` (server default)
-- Makes columns with defaults `Option<T>` — you can omit them and let the database fill them in
+`InsertUsers` is a separate struct for new rows. It includes all columns, but columns with a `DEFAULT` expression become `Option<T>` — you can pass `None` and let the database fill them in.
 
 The insert struct does **not** derive `sqlx::FromRow` since it is not read back from the database.
 

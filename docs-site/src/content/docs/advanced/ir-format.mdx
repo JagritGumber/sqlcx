@@ -112,7 +112,7 @@ Represents one annotated SQL query.
 
 ```json
 {
-  "name": "getUserById",
+  "name": "GetUserById",
   "command": "one",
   "sql": "SELECT id, email FROM users WHERE id = $1",
   "params": [
@@ -202,7 +202,7 @@ CREATE TABLE users (
 
 ```sql
 -- queries/users.sql
--- name: getUserByEmail :one
+-- name: GetUserByEmail :one
 SELECT id, email, role FROM users WHERE email = $1;
 ```
 
@@ -244,7 +244,7 @@ The IR looks like:
   ],
   "queries": [
     {
-      "name": "getUserByEmail",
+      "name": "GetUserByEmail",
       "command": "one",
       "sql": "SELECT id, email, role FROM users WHERE email = $1",
       "params": [

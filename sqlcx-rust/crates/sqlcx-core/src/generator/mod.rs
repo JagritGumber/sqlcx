@@ -1,3 +1,4 @@
+pub mod rust_lang;
 pub mod typescript;
 
 use crate::config::TargetConfig;
@@ -24,6 +25,7 @@ pub trait LanguagePlugin {
 pub fn resolve_language(name: &str, schema: &str, driver: &str) -> Result<Box<dyn LanguagePlugin>> {
     match name {
         "typescript" => Ok(Box::new(typescript::TypeScriptPlugin::new(schema, driver)?)),
+        "rust" => Ok(Box::new(rust_lang::RustPlugin::new(schema, driver)?)),
         _ => Err(crate::error::SqlcxError::UnknownLanguage(name.to_string())),
     }
 }

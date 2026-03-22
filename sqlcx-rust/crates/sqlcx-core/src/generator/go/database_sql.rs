@@ -159,7 +159,7 @@ fn generate_query_function(query: &QueryDef) -> String {
     parts.push(format!(
         "const {} = \"{}\"",
         const_name,
-        query.sql.replace('"', "\\\""),
+        query.sql.replace('\\', "\\\\").replace('"', "\\\"").replace('\n', "\\n").replace('\r', "\\r").replace('\t', "\\t"),
     ));
 
     match query.command {

@@ -13,9 +13,8 @@ sqlparser = { version = "0.53", features = ["visitor"] }
 sha2 = "0.10"
 toml = "0.8"
 glob = "0.3"
-tempfile = "3"
 regex = "1"
-schemars = "0.8"
 
 [dev-dependencies]
 insta = { version = "1", features = ["json"] }
+tempfile = "3"

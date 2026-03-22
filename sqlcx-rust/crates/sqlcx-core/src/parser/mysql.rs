@@ -1,14 +1,105 @@
 use std::collections::HashMap;
+use std::sync::LazyLock;
 
 use regex::Regex;
 
 use crate::annotations::extract_annotations;
 use crate::error::Result;
 use crate::ir::{
-    ColumnDef, EnumDef, ParamDef, QueryCommand, QueryDef, SqlType, SqlTypeCategory, TableDef,
+    ColumnDef, EnumDef, QueryDef, SqlType, SqlTypeCategory, TableDef,
 };
-use crate::param_naming::{resolve_param_names, RawParam};
-use crate::parser::DatabaseParser;
+use crate::parser::{
+    build_params, make_unknown_column, split_column_defs, split_query_blocks, DatabaseParser,
+};
+
+// ── Static regex patterns ────────────────────────────────────────────────────
+
+static ENUM_TYPE_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(?i)^ENUM\s*\(\s*((?:'[^']*'(?:\s*,\s*'[^']*')*)?)\s*\)").unwrap()
+});
+
+static ENUM_VAL_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"'([^']*)'").unwrap());
+
+static TINYINT_BOOL_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?i)^TINYINT\s*\(\s*1\s*\)").unwrap());
+
+static BASE_TYPE_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?i)^(\w+)").unwrap());
+
+static CONSTRAINT_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(?i)^(PRIMARY\s+KEY|CONSTRAINT|UNIQUE|CHECK|FOREIGN\s+KEY|KEY\s+)").unwrap()
+});
+
+static COL_NAME_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^(?:`(\w+)`|(\w+))\s+").unwrap());
+
+static ENUM_COL_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?i)^(ENUM\s*\([^)]*\))").unwrap());
+
+static COL_TYPE_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?i)^(\w+(?:\s*\([^)]*\))?)").unwrap());
+
+static NOT_NULL_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?i)\bNOT\s+NULL\b").unwrap());
+
+static DEFAULT_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?i)\bDEFAULT\b").unwrap());
+
+static PK_INLINE_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?i)\bPRIMARY\s+KEY\b").unwrap());
+
+static UNIQUE_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?i)\bUNIQUE\b").unwrap());
+
+static AUTO_INC_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?i)\bAUTO_INCREMENT\b").unwrap());
+
+static GENERATED_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?i)\bGENERATED\s+ALWAYS\s+AS\b").unwrap());
+
+static TABLE_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(
+        r"(?is)CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?(?:`?(\w+)`?)\s*\(([\s\S]*?)\)\s*(?:ENGINE\s*=\s*\w+\s*)?;",
+    )
+    .unwrap()
+});
+
+static TABLE_RE_FALLBACK: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(
+        r"(?is)CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?(?:`?(\w+)`?)\s*\(([\s\S]*?)\)\s*;",
+    )
+    .unwrap()
+});
+
+static TABLE_PK_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(?i)^PRIMARY\s+KEY\s*\(\s*([\w\s,`]+)\s*\)").unwrap()
+});
+
+static INSERT_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(
+        r"(?i)INSERT\s+INTO\s+`?\w+`?\s*\(\s*([\w\s,`]+)\s*\)\s*VALUES\s*\(\s*([?,\s]+)\s*\)",
+    )
+    .unwrap()
+});
+
+static WHERE_PARAM_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(
+        r"(?i)(?:(\w+)\s*\(\s*(\w+)\s*\)|(\w+))\s*(?:=|!=|<>|<=?|>=?|(?:NOT\s+)?(?:I?LIKE|IN|IS))\s*\?",
+    )
+    .unwrap()
+});
+
+static FROM_TABLE_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?i)(?:FROM|INTO|UPDATE)\s+`?(\w+)`?").unwrap());
+
+static SELECT_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?i)^\s*SELECT\b").unwrap());
+
+static SELECT_COLS_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?i)SELECT\s+([\s\S]+?)\s+FROM\b").unwrap());
+
+static ALIAS_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?i)^`?(\w+)`?\s+as\s+`?(\w+)`?$").unwrap());
 
 // ── Type mapping ─────────────────────────────────────────────────────────────
 
@@ -30,15 +121,13 @@ fn type_category(normalized: &str) -> Option<SqlTypeCategory> {
 }
 
 /// Resolve a raw MySQL type string into a SqlType.
-/// Handles ENUM('a','b'), TINYINT(1) → Boolean, and standard types.
+/// Handles ENUM('a','b'), TINYINT(1) -> Boolean, and standard types.
 fn resolve_sql_type(raw: &str) -> SqlType {
     let trimmed = raw.trim();
 
     // Inline ENUM: ENUM('a', 'b', 'c')
-    let enum_re = Regex::new(r"(?i)^ENUM\s*\(\s*((?:'[^']*'(?:\s*,\s*'[^']*')*)?)\s*\)").unwrap();
-    if let Some(cap) = enum_re.captures(trimmed) {
-        let val_re = Regex::new(r"'([^']*)'").unwrap();
-        let values: Vec<String> = val_re
+    if let Some(cap) = ENUM_TYPE_RE.captures(trimmed) {
+        let values: Vec<String> = ENUM_VAL_RE
             .captures_iter(&cap[1])
             .map(|v| v[1].to_string())
             .collect();
@@ -53,9 +142,8 @@ fn resolve_sql_type(raw: &str) -> SqlType {
         };
     }
 
-    // TINYINT(1) → Boolean
-    let tinyint_bool_re = Regex::new(r"(?i)^TINYINT\s*\(\s*1\s*\)").unwrap();
-    if tinyint_bool_re.is_match(trimmed) {
+    // TINYINT(1) -> Boolean
+    if TINYINT_BOOL_RE.is_match(trimmed) {
         return SqlType {
             raw: trimmed.to_string(),
             normalized: "tinyint(1)".to_string(),
@@ -67,9 +155,8 @@ fn resolve_sql_type(raw: &str) -> SqlType {
         };
     }
 
-    // Strip parenthesized size/precision: VARCHAR(255) → varchar, DECIMAL(10,2) → decimal
-    let base_re = Regex::new(r"(?i)^(\w+)").unwrap();
-    let base = base_re
+    // Strip parenthesized size/precision: VARCHAR(255) -> varchar, DECIMAL(10,2) -> decimal
+    let base = BASE_TYPE_RE
         .captures(trimmed)
         .map(|c| c[1].to_lowercase())
         .unwrap_or_else(|| trimmed.to_lowercase());
@@ -102,39 +189,6 @@ fn resolve_sql_type(raw: &str) -> SqlType {
 
 // ── Schema parsing ───────────────────────────────────────────────────────────
 
-/// Split CREATE TABLE body by commas, respecting nested parens.
-fn split_column_defs(body: &str) -> Vec<String> {
-    let mut parts = Vec::new();
-    let mut depth = 0i32;
-    let mut current = String::new();
-
-    for ch in body.chars() {
-        match ch {
-            '(' => {
-                depth += 1;
-                current.push(ch);
-            }
-            ')' => {
-                depth -= 1;
-                current.push(ch);
-            }
-            ',' if depth == 0 => {
-                let trimmed = current.trim().to_string();
-                if !trimmed.is_empty() {
-                    parts.push(trimmed);
-                }
-                current.clear();
-            }
-            _ => current.push(ch),
-        }
-    }
-    let trimmed = current.trim().to_string();
-    if !trimmed.is_empty() {
-        parts.push(trimmed);
-    }
-    parts
-}
-
 struct ParsedColumn {
     col: ColumnDef,
     is_pk: bool,
@@ -148,15 +202,12 @@ fn parse_column_line(line: &str) -> Option<ParsedColumn> {
     }
 
     // Skip constraint lines
-    let constraint_re =
-        Regex::new(r"(?i)^(PRIMARY\s+KEY|CONSTRAINT|UNIQUE|CHECK|FOREIGN\s+KEY|KEY\s+)").unwrap();
-    if constraint_re.is_match(line) {
+    if CONSTRAINT_RE.is_match(line) {
         return None;
     }
 
     // Extract column name — may be backtick-quoted
-    let name_re = Regex::new(r"^(?:`(\w+)`|(\w+))\s+").unwrap();
-    let name_cap = name_re.captures(line)?;
+    let name_cap = COL_NAME_RE.captures(line)?;
     let col_name = name_cap
         .get(1)
         .or_else(|| name_cap.get(2))?
@@ -168,14 +219,12 @@ fn parse_column_line(line: &str) -> Option<ParsedColumn> {
     let raw_type: String;
     let rest: &str;
 
-    let enum_re = Regex::new(r"(?i)^(ENUM\s*\([^)]*\))").unwrap();
-    if let Some(cap) = enum_re.captures(after_name) {
+    if let Some(cap) = ENUM_COL_RE.captures(after_name) {
         raw_type = cap[1].to_string();
         rest = &after_name[cap[0].len()..];
     } else {
         // Match type with optional parenthesized params: INT, VARCHAR(255), DECIMAL(10,2)
-        let type_re = Regex::new(r"(?i)^(\w+(?:\s*\([^)]*\))?)").unwrap();
-        if let Some(cap) = type_re.captures(after_name) {
+        if let Some(cap) = COL_TYPE_RE.captures(after_name) {
             raw_type = cap[1].to_string();
             rest = &after_name[cap[0].len()..];
         } else {
@@ -184,19 +233,12 @@ fn parse_column_line(line: &str) -> Option<ParsedColumn> {
         }
     }
 
-    let not_null_re = Regex::new(r"(?i)\bNOT\s+NULL\b").unwrap();
-    let default_re = Regex::new(r"(?i)\bDEFAULT\b").unwrap();
-    let pk_re = Regex::new(r"(?i)\bPRIMARY\s+KEY\b").unwrap();
-    let unique_re = Regex::new(r"(?i)\bUNIQUE\b").unwrap();
-    let auto_inc_re = Regex::new(r"(?i)\bAUTO_INCREMENT\b").unwrap();
-    let generated_re = Regex::new(r"(?i)\bGENERATED\s+ALWAYS\s+AS\b").unwrap();
-
-    let is_not_null = not_null_re.is_match(rest);
-    let has_default_kw = default_re.is_match(rest);
-    let is_pk = pk_re.is_match(rest);
-    let is_unique = unique_re.is_match(rest);
-    let is_auto_inc = auto_inc_re.is_match(rest);
-    let is_generated = generated_re.is_match(rest);
+    let is_not_null = NOT_NULL_RE.is_match(rest);
+    let has_default_kw = DEFAULT_RE.is_match(rest);
+    let is_pk = PK_INLINE_RE.is_match(rest);
+    let is_unique = UNIQUE_RE.is_match(rest);
+    let is_auto_inc = AUTO_INC_RE.is_match(rest);
+    let is_generated = GENERATED_RE.is_match(rest);
 
     let sql_type = resolve_sql_type(&raw_type);
 
@@ -215,21 +257,10 @@ fn parse_column_line(line: &str) -> Option<ParsedColumn> {
 }
 
 fn parse_schema_tables(sql: &str) -> Vec<TableDef> {
-    let table_re = Regex::new(
-        r"(?is)CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?(?:`?(\w+)`?)\s*\(([\s\S]*?)\)\s*(?:ENGINE\s*=\s*\w+\s*)?;",
-    )
-    .unwrap();
-
-    // Fallback: also try without trailing ENGINE/;
-    let table_re_fallback = Regex::new(
-        r"(?is)CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?(?:`?(\w+)`?)\s*\(([\s\S]*?)\)\s*;",
-    )
-    .unwrap();
-
     let mut tables = Vec::new();
-    let captures: Vec<_> = table_re.captures_iter(sql).collect();
+    let captures: Vec<_> = TABLE_RE.captures_iter(sql).collect();
     let captures = if captures.is_empty() {
-        table_re_fallback.captures_iter(sql).collect()
+        TABLE_RE_FALLBACK.captures_iter(sql).collect()
     } else {
         captures
     };
@@ -285,9 +316,7 @@ fn parse_schema_tables(sql: &str) -> Vec<TableDef> {
             let trimmed = line.trim();
 
             // Table-level PRIMARY KEY constraint
-            let pk_re =
-                Regex::new(r"(?i)^PRIMARY\s+KEY\s*\(\s*([\w\s,`]+)\s*\)").unwrap();
-            if let Some(pk_cap) = pk_re.captures(trimmed) {
+            if let Some(pk_cap) = TABLE_PK_RE.captures(trimmed) {
                 for col in pk_cap[1].split(',') {
                     primary_key.push(col.trim().trim_matches('`').to_lowercase());
                 }
@@ -339,73 +368,6 @@ fn parse_schema_tables(sql: &str) -> Vec<TableDef> {
 
 // ── Query parsing ────────────────────────────────────────────────────────────
 
-struct QueryBlock {
-    name: String,
-    command: QueryCommand,
-    sql: String,
-    comments: String,
-}
-
-fn split_query_blocks(sql: &str) -> Vec<QueryBlock> {
-    let header_re =
-        Regex::new(r"--\s*name:\s*(\w+)\s+:(one|many|execresult|exec)").unwrap();
-
-    let lines: Vec<&str> = sql.lines().collect();
-    let mut blocks: Vec<QueryBlock> = Vec::new();
-    let mut current: Option<QueryBlock> = None;
-    let mut comment_buffer = String::new();
-
-    for line in &lines {
-        let trimmed = line.trim();
-
-        if let Some(cap) = header_re.captures(trimmed) {
-            if let Some(block) = current.take() {
-                blocks.push(block);
-            }
-
-            let command = match &cap[2] {
-                "one" => QueryCommand::One,
-                "many" => QueryCommand::Many,
-                "execresult" => QueryCommand::ExecResult,
-                _ => QueryCommand::Exec,
-            };
-
-            let mut comments = comment_buffer.clone();
-            comments.push_str(trimmed);
-            comments.push('\n');
-            comment_buffer.clear();
-
-            current = Some(QueryBlock {
-                name: cap[1].to_string(),
-                command,
-                sql: String::new(),
-                comments,
-            });
-        } else if trimmed.starts_with("--") {
-            if let Some(ref mut block) = current {
-                block.comments.push_str(trimmed);
-                block.comments.push('\n');
-            } else {
-                comment_buffer.push_str(trimmed);
-                comment_buffer.push('\n');
-            }
-        } else if let Some(ref mut block) = current {
-            if !trimmed.is_empty() {
-                if !block.sql.is_empty() {
-                    block.sql.push(' ');
-                }
-                block.sql.push_str(trimmed);
-            }
-        }
-    }
-
-    if let Some(block) = current {
-        blocks.push(block);
-    }
-
-    blocks
-}
-
 /// Count `?` placeholders left-to-right, returning 1-based indices.
 fn extract_param_indices(sql: &str) -> Vec<u32> {
     let mut count = 0u32;
@@ -424,11 +386,7 @@ fn infer_param_columns(sql: &str) -> HashMap<u32, String> {
     let mut result = HashMap::new();
 
     // INSERT pattern: INSERT INTO tbl (col1, col2) VALUES (?, ?)
-    let insert_re = Regex::new(
-        r"(?i)INSERT\s+INTO\s+`?\w+`?\s*\(\s*([\w\s,`]+)\s*\)\s*VALUES\s*\(\s*([?,\s]+)\s*\)",
-    )
-    .unwrap();
-    if let Some(cap) = insert_re.captures(sql) {
+    if let Some(cap) = INSERT_RE.captures(sql) {
         let cols: Vec<String> = cap[1]
             .split(',')
             .map(|s| s.trim().trim_matches('`').to_lowercase())
@@ -455,14 +413,7 @@ fn infer_param_columns(sql: &str) -> HashMap<u32, String> {
     .into_iter()
     .collect();
 
-    // Find column = ? patterns by walking through and counting ?'s
-    let where_re = Regex::new(
-        r"(?i)(?:(\w+)\s*\(\s*(\w+)\s*\)|(\w+))\s*(?:=|!=|<>|<=?|>=?|(?:NOT\s+)?(?:I?LIKE|IN|IS))\s*\?",
-    )
-    .unwrap();
-
     // We need to count ? positions to get the right index
-    // Strategy: find all ? positions, then match patterns to assign columns
     let mut question_positions: Vec<usize> = Vec::new();
     for (i, ch) in sql.char_indices() {
         if ch == '?' {
@@ -470,7 +421,7 @@ fn infer_param_columns(sql: &str) -> HashMap<u32, String> {
         }
     }
 
-    for cap in where_re.captures_iter(sql) {
+    for cap in WHERE_PARAM_RE.captures_iter(sql) {
         // Find which ? this match refers to by position
         let match_end = cap.get(0).unwrap().end();
         // The ? is at match_end - 1
@@ -492,20 +443,17 @@ fn infer_param_columns(sql: &str) -> HashMap<u32, String> {
 }
 
 fn find_from_table<'a>(sql: &str, tables: &'a [TableDef]) -> Option<&'a TableDef> {
-    let re = Regex::new(r"(?i)(?:FROM|INTO|UPDATE)\s+`?(\w+)`?").unwrap();
-    let cap = re.captures(sql)?;
+    let cap = FROM_TABLE_RE.captures(sql)?;
     let table_name = cap[1].to_lowercase();
     tables.iter().find(|t| t.name == table_name)
 }
 
 fn resolve_return_columns(sql: &str, table: Option<&TableDef>) -> Vec<ColumnDef> {
-    let select_re = Regex::new(r"(?i)^\s*SELECT\b").unwrap();
-    if !select_re.is_match(sql) {
+    if !SELECT_RE.is_match(sql) {
         return Vec::new();
     }
 
-    let cols_re = Regex::new(r"(?i)SELECT\s+([\s\S]+?)\s+FROM\b").unwrap();
-    let Some(cap) = cols_re.captures(sql) else {
+    let Some(cap) = SELECT_COLS_RE.captures(sql) else {
         return Vec::new();
     };
     let cols_part = cap[1].trim();
@@ -519,13 +467,12 @@ fn resolve_return_columns(sql: &str, table: Option<&TableDef>) -> Vec<ColumnDef>
     };
 
     let col_names: Vec<&str> = cols_part.split(',').map(|s| s.trim()).collect();
-    let alias_re = Regex::new(r"(?i)^`?(\w+)`?\s+as\s+`?(\w+)`?$").unwrap();
 
     col_names
         .iter()
         .map(|&col_expr| {
             let expr_lower = col_expr.to_lowercase();
-            if let Some(alias_cap) = alias_re.captures(&expr_lower) {
+            if let Some(alias_cap) = ALIAS_RE.captures(&expr_lower) {
                 let actual = &alias_cap[1];
                 let alias = alias_cap[2].to_string();
                 table
@@ -546,81 +493,6 @@ fn resolve_return_columns(sql: &str, table: Option<&TableDef>) -> Vec<ColumnDef>
                     .find(|c| c.name == name)
                     .cloned()
                     .unwrap_or_else(|| make_unknown_column(name))
-            }
-        })
-        .collect()
-}
-
-fn make_unknown_column(name: &str) -> ColumnDef {
-    ColumnDef {
-        name: name.to_string(),
-        alias: None,
-        source_table: None,
-        sql_type: SqlType {
-            raw: "unknown".to_string(),
-            normalized: "unknown".to_string(),
-            category: SqlTypeCategory::Unknown,
-            element_type: None,
-            enum_name: None,
-            enum_values: None,
-            json_shape: None,
-        },
-        nullable: true,
-        has_default: false,
-    }
-}
-
-fn make_unknown_type() -> SqlType {
-    SqlType {
-        raw: "unknown".to_string(),
-        normalized: "unknown".to_string(),
-        category: SqlTypeCategory::Unknown,
-        element_type: None,
-        enum_name: None,
-        enum_values: None,
-        json_shape: None,
-    }
-}
-
-fn build_params(sql: &str, comments: &str, table: Option<&TableDef>) -> Vec<ParamDef> {
-    let param_indices = extract_param_indices(sql);
-    if param_indices.is_empty() {
-        return Vec::new();
-    }
-
-    let (_, ann) = extract_annotations(comments);
-    let inferred_cols = infer_param_columns(sql);
-
-    let raw_params: Vec<RawParam> = param_indices
-        .iter()
-        .map(|&idx| RawParam {
-            index: idx,
-            column: inferred_cols.get(&idx).cloned(),
-            r#override: ann.param_overrides.get(&idx).cloned(),
-        })
-        .collect();
-
-    let names = resolve_param_names(&raw_params);
-
-    param_indices
-        .iter()
-        .enumerate()
-        .map(|(i, &idx)| {
-            let col_name = inferred_cols.get(&idx);
-            let sql_type = if let (Some(tbl), Some(cn)) = (table, col_name) {
-                tbl.columns
-                    .iter()
-                    .find(|c| c.name == *cn)
-                    .map(|c| c.sql_type.clone())
-                    .unwrap_or_else(make_unknown_type)
-            } else {
-                make_unknown_type()
-            };
-
-            ParamDef {
-                index: idx,
-                name: names[i].clone(),
-                sql_type,
             }
         })
         .collect()
@@ -656,7 +528,9 @@ impl DatabaseParser for MySqlParser {
 
         for block in blocks {
             let table = find_from_table(&block.sql, tables);
-            let params = build_params(&block.sql, &block.comments, table);
+            let param_indices = extract_param_indices(&block.sql);
+            let inferred_cols = infer_param_columns(&block.sql);
+            let params = build_params(&block.sql, &block.comments, table, param_indices, inferred_cols);
             let returns = resolve_return_columns(&block.sql, table);
 
             let clean_sql = block

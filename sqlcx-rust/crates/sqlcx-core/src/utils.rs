@@ -38,6 +38,20 @@ pub fn camel_case(s: &str) -> String {
     }
 }
 
+/// Convert PascalCase or camelCase to snake_case.
+/// Already snake_case names pass through unchanged.
+pub fn snake_case(name: &str) -> String {
+    let mut out = String::with_capacity(name.len() + 4);
+    let chars: Vec<char> = name.chars().collect();
+    for (i, &c) in chars.iter().enumerate() {
+        if c.is_uppercase() && i > 0 && chars[i - 1].is_lowercase() {
+            out.push('_');
+        }
+        out.push(c.to_ascii_lowercase());
+    }
+    out
+}
+
 /// Escape a string for embedding in a JS/TS double-quoted literal.
 /// Mirrors: JSON.stringify(str).slice(1, -1)
 pub fn escape_string(s: &str) -> String {

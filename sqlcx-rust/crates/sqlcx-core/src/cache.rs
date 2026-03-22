@@ -40,7 +40,7 @@ pub fn write_cache(cache_dir: &Path, ir: &SqlcxIR, hash: &str) -> Result<()> {
     };
     let cache_path = cache_dir.join("ir.json");
     let temp_path = cache_path.with_extension("json.tmp");
-    let json = serde_json::to_string_pretty(&data)?;
+    let json = serde_json::to_string(&data)?;
     fs::write(&temp_path, &json)?;
     fs::rename(&temp_path, &cache_path)?;
     Ok(())

@@ -263,7 +263,13 @@ impl<'a> JsonParser<'a> {
 }
 
 fn parse_json_shape(body: &str) -> Option<JsonShape> {
-    JsonParser::new(body.trim()).parse().ok()
+    match JsonParser::new(body.trim()).parse() {
+        Ok(shape) => Some(shape),
+        Err(e) => {
+            eprintln!("warning: failed to parse @json annotation: {e}");
+            None
+        }
+    }
 }
 
 // ── Main extraction function ──────────────────────────────────────────────────

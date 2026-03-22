@@ -40,12 +40,12 @@ fn run(cli: Cli) -> sqlcx_core::error::Result<()> {
         Commands::Generate => run_pipeline(true),
         Commands::Check => run_pipeline(false),
         Commands::Init => {
-            eprintln!("TODO: init scaffold");
-            Ok(())
+            eprintln!("error: init command not yet implemented");
+            std::process::exit(1);
         }
         Commands::Schema => {
-            eprintln!("TODO: emit JSON schema");
-            Ok(())
+            eprintln!("error: schema command not yet implemented");
+            std::process::exit(1);
         }
     }
 }
@@ -61,15 +61,21 @@ fn run_pipeline(write_output: bool) -> sqlcx_core::error::Result<()> {
     eprintln!("Scanning SQL files in {}", sql_dir.display());
 
     let all_sql = collect_sql_files(&sql_dir)?;
-    let (schema_files, query_files) = partition_sql_files(&sql_dir, &all_sql);
 
+    // Read all SQL files into structs once
     let sql_file_structs: Vec<SqlFile> = all_sql
         .iter()
-        .map(|p| SqlFile {
-            path: p.to_string_lossy().into_owned(),
-            content: std::fs::read_to_string(p).unwrap_or_default(),
+        .map(|p| -> sqlcx_core::error::Result<SqlFile> {
+            Ok(SqlFile {
+                path: p.to_string_lossy().into_owned(),
+                content: std::fs::read_to_string(p)?,
+            })
         })
-        .collect();
+        .collect::<sqlcx_core::error::Result<Vec<_>>>()?;
+
+    // Partition using already-loaded content (no double reads)
+    let queries_dir = sql_dir.join("queries");
+    let (schema_files, query_files) = partition_sql_files(&queries_dir, &sql_file_structs);
 
     let hash = compute_hash(&sql_file_structs);
     let cache_dir = cwd.join(".sqlcx");
@@ -139,20 +145,20 @@ fn collect_sql_files(sql_dir: &Path) -> sqlcx_core::error::Result<Vec<PathBuf>> 
     Ok(paths)
 }
 
+/// Partition SQL files using already-loaded content.
 /// Schema files: not inside a "queries" directory and not containing `-- name:`.
 /// Query files: inside a "queries" directory or containing `-- name:`.
-fn partition_sql_files(sql_dir: &Path, files: &[PathBuf]) -> (Vec<PathBuf>, Vec<PathBuf>) {
-    let queries_dir = sql_dir.join("queries");
+fn partition_sql_files(queries_dir: &Path, files: &[SqlFile]) -> (Vec<PathBuf>, Vec<PathBuf>) {
     let mut schema = Vec::new();
     let mut queries = Vec::new();
-    for p in files {
-        let is_in_queries_dir = p.starts_with(&queries_dir);
-        let content = std::fs::read_to_string(p).unwrap_or_default();
-        let has_name_annotation = content.contains("-- name:");
+    for f in files {
+        let p = PathBuf::from(&f.path);
+        let is_in_queries_dir = p.starts_with(queries_dir);
+        let has_name_annotation = f.content.contains("-- name:");
         if is_in_queries_dir || has_name_annotation {
-            queries.push(p.clone());
+            queries.push(p);
         } else {
-            schema.push(p.clone());
+            schema.push(p);
         }
     }
     (schema, queries)

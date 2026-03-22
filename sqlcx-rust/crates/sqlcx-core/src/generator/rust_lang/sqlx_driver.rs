@@ -3,7 +3,7 @@ use std::path::Path;
 use crate::error::Result;
 use crate::generator::{DriverGenerator, GeneratedFile};
 use crate::ir::{ColumnDef, QueryCommand, QueryDef, SqlType, SqlTypeCategory, SqlcxIR};
-use crate::utils::pascal_case;
+use crate::utils::{pascal_case, snake_case};
 
 pub struct SqlxGenerator;
 
@@ -75,23 +75,6 @@ fn param_type(sql_type: &SqlType) -> String {
     }
 }
 
-/// Convert a snake_case function name to snake_case (no-op, but ensures
-/// consistency with the naming convention).
-fn snake_case(name: &str) -> String {
-    // Query names from the parser are already in snake_case form like
-    // "get_user". camel_case would produce "getUser"; we want "get_user".
-    // We just lowercase the first char if it's pascal and insert underscores.
-    let mut out = String::with_capacity(name.len() + 4);
-    let chars: Vec<char> = name.chars().collect();
-    for (i, &c) in chars.iter().enumerate() {
-        if c.is_uppercase() && i > 0 && chars[i - 1].is_lowercase() {
-            out.push('_');
-        }
-        out.push(c.to_ascii_lowercase());
-    }
-    out
-}
-
 // ── Per-query generators ──────────────────────────────────────────────────────
 
 fn generate_row_struct(query: &QueryDef) -> String {
@@ -118,7 +101,7 @@ fn generate_row_struct(query: &QueryDef) -> String {
 fn generate_result_struct(query: &QueryDef) -> String {
     let type_name = format!("{}Result", pascal_case(&query.name));
     format!(
-        "pub struct {} {{\n    pub rows_affected: u64,\n}}",
+        "#[derive(Debug, Clone)]\npub struct {} {{\n    pub rows_affected: u64,\n}}",
         type_name
     )
 }
@@ -154,12 +137,7 @@ fn generate_query_function(query: &QueryDef) -> String {
     let mut params_sig = String::from("pool: &sqlx::PgPool");
     for p in &query.params {
         let ptype = param_type(&p.sql_type);
-        // For reference types, the param is already a reference
-        if ptype.starts_with('&') {
-            params_sig.push_str(&format!(", {}: {}", p.name, ptype));
-        } else {
-            params_sig.push_str(&format!(", {}: {}", p.name, ptype));
-        }
+        params_sig.push_str(&format!(", {}: {}", p.name, ptype));
     }
 
     // Bind calls
@@ -199,7 +177,7 @@ fn generate_query_function(query: &QueryDef) -> String {
             "Result<(), sqlx::Error>".to_string(),
             format!(
                 "    sqlx::query({}){}
-        .fetch_optional(pool)
+        .execute(pool)
         .await
         .map(|_| ())",
                 sql_const_name, binds

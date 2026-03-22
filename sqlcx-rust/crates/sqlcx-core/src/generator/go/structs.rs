@@ -46,13 +46,10 @@ fn nullable_go_type(sql_type: &SqlType) -> String {
 }
 
 /// Collect Go imports needed for a set of columns.
-fn collect_imports(columns: &[ColumnDef], include_nullable: bool) -> BTreeSet<String> {
+fn collect_imports(columns: &[ColumnDef]) -> BTreeSet<String> {
     let mut imports = BTreeSet::new();
     for col in columns {
         collect_type_imports(&col.sql_type, &mut imports);
-        if include_nullable && (col.nullable || col.has_default) {
-            // Pointer types don't need extra imports beyond the base type
-        }
     }
     imports
 }
@@ -216,8 +213,8 @@ impl GoStructGenerator {
         // Collect all imports
         let mut all_imports = BTreeSet::new();
         for table in &ir.tables {
-            let sel_imports = collect_imports(&table.columns, false);
-            let ins_imports = collect_imports(&table.columns, true);
+            let sel_imports = collect_imports(&table.columns);
+            let ins_imports = collect_imports(&table.columns);
             all_imports.extend(sel_imports);
             all_imports.extend(ins_imports);
         }
@@ -262,7 +259,7 @@ pub fn go_base_type(sql_type: &SqlType) -> String {
 
 /// Collect imports needed for a set of columns.
 pub fn go_imports_for_columns(columns: &[ColumnDef]) -> BTreeSet<String> {
-    collect_imports(columns, false)
+    collect_imports(columns)
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────

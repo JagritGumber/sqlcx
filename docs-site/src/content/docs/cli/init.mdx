@@ -1,0 +1,64 @@
+---
+title: init
+description: Scaffold a new sqlcx project with a config file and SQL directory structure.
+---
+
+## Usage
+
+```bash
+sqlcx init
+```
+
+Scaffolds a new sqlcx project in the current directory. Creates a `sqlcx.toml` config file and a starter `sql/` directory layout so you can start writing SQL immediately.
+
+---
+
+## Intended behavior
+
+When implemented, `sqlcx init` will:
+
+1. Create `sqlcx.toml` with sensible defaults for your chosen language target.
+2. Create `sql/` with a starter `schema.sql` and `sql/queries/` directory.
+3. Print next steps to get you to your first `sqlcx generate`.
+
+Expected output:
+
+```
+$ sqlcx init
+Created sqlcx.toml
+Created sql/schema.sql
+Created sql/queries/.gitkeep
+
+Next steps:
+  1. Edit sql/schema.sql with your CREATE TABLE statements
+  2. Add queries to sql/queries/
+  3. Run: sqlcx generate
+```
+
+---
+
+## Current status
+
+:::caution[Not yet implemented]
+`sqlcx init` is planned and will be available in a future release. Running it today exits with an error:
+
+```
+error: init command not yet implemented
+```
+:::
+
+In the meantime, set up a project manually:
+
+```bash
+mkdir -p sql/queries
+touch sqlcx.toml
+```
+
+Then fill in `sqlcx.toml` — see the [Configuration](/getting-started/configuration) reference for all available options.
+
+---
+
+## See also
+
+- [Configuration](/getting-started/configuration) — manual config reference
+- [Quick Start](/getting-started/quick-start) — step-by-step setup guide

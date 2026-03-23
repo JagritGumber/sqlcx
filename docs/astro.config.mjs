@@ -50,6 +50,12 @@ export default defineConfig({
           ],
         },
         {
+          label: 'Python',
+          items: [
+            { label: 'Pydantic', slug: 'python/pydantic' },
+          ],
+        },
+        {
           label: 'Rust',
           items: [
             { label: 'Serde', slug: 'rust/serde' },
@@ -86,7 +92,6 @@ export default defineConfig({
         {
           label: 'Coming Soon',
           items: [
-            { label: 'Python', slug: 'coming-soon/python' },
             { label: 'Migrations', slug: 'coming-soon/migrations' },
             { label: 'Watch Mode', slug: 'coming-soon/watch-mode' },
             { label: 'DSL Compiler', slug: 'coming-soon/dsl-compiler' },

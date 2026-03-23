@@ -15,6 +15,56 @@ fn cli_help() {
 }
 
 #[test]
+fn cli_init_scaffolds_project() {
+    let dir = tempfile::tempdir().unwrap();
+
+    let output = sqlcx_bin()
+        .arg("init")
+        .current_dir(dir.path())
+        .output()
+        .unwrap();
+
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(dir.path().join("sqlcx.toml").exists());
+    assert!(dir.path().join("sql/schema.sql").exists());
+    assert!(dir.path().join("sql/queries/users.sql").exists());
+
+    // Verify generate works on the scaffolded project
+    let output = sqlcx_bin()
+        .arg("generate")
+        .current_dir(dir.path())
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "generate after init failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(dir.path().join("src/db/schema.ts").exists());
+    assert!(dir.path().join("src/db/client.ts").exists());
+}
+
+#[test]
+fn cli_init_refuses_if_config_exists() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("sqlcx.toml"), "existing").unwrap();
+
+    let output = sqlcx_bin()
+        .arg("init")
+        .current_dir(dir.path())
+        .output()
+        .unwrap();
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("already exists"));
+}
+
+#[test]
 fn cli_generate_with_fixtures() {
     let dir = tempfile::tempdir().unwrap();
     let sql_dir = dir.path().join("sql");

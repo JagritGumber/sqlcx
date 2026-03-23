@@ -1,90 +1,78 @@
 ---
 title: generate
-description: Parse SQL files and generate type-safe code for all configured targets.
+description: Generate type-safe code from your SQL files.
 ---
-
-import { Steps } from '@astrojs/starlight/components';
-
-## Usage
 
 ```bash
-sqlcx generate
+npx sqlcx generate
 ```
 
-Runs the full code-generation pipeline. Reads your `sqlcx.toml`, scans SQL files, parses schema and queries, then writes typed output files for every configured target.
+Reads your SQL, generates typed code. That's the whole command.
 
 ---
 
-## Pipeline
+## What happens
 
-<Steps>
-
-1. **Load config** — reads `sqlcx.toml` (or `sqlcx.json`) from the current directory.
-
-2. **Glob SQL files** — recursively finds every `*.sql` file under the configured `sql` directory.
-
-3. **Partition** — splits files into schema files and query files:
-   - **Schema files**: any `.sql` file that is NOT inside a `queries/` subdirectory and does NOT contain a `-- name:` annotation.
-   - **Query files**: any `.sql` file inside a `queries/` subdirectory OR containing at least one `-- name:` annotation.
-
-4. **Hash** — computes a SHA-256 hash over all file contents.
-
-5. **Cache check** — looks for a matching entry in `.sqlcx/`. If a cache hit is found, skips parsing entirely.
-
-6. **Parse** — on a cache miss, invokes the configured SQL parser to build the Intermediate Representation (IR): tables, enums, and queries.
-
-7. **Write cache** — stores the new IR to `.sqlcx/` keyed by the content hash.
-
-8. **Generate** — for each `[[targets]]` block in config, calls the matching language plugin to produce output files.
-
-9. **Write output** — writes generated files to the `out` directory for each target.
-
-</Steps>
-
----
-
-## Example output
+1. sqlcx reads `sqlcx.toml` from your project root
+2. Finds all `.sql` files in your `sql` directory
+3. Parses your tables, enums, and annotated queries
+4. Writes typed code to each target's `out` directory
 
 ```
-$ sqlcx generate
-Loading config from /myapp
-Scanning SQL files in /myapp/sql
-Cache miss — parsing SQL files
-Writing /myapp/src/generated/users.ts
-Writing /myapp/src/generated/schema.ts
+$ npx sqlcx generate
+Writing src/generated/schema.ts
+Writing src/generated/client.ts
+Writing src/generated/users.queries.ts
 Done.
 ```
 
-On a subsequent run with no SQL changes:
-
-```
-$ sqlcx generate
-Loading config from /myapp
-Scanning SQL files in /myapp/sql
-Cache hit — using cached IR
-Writing /myapp/src/generated/users.ts
-Writing /myapp/src/generated/schema.ts
-Done.
-```
-
-All pipeline messages are written to **stderr**. Only generated file content goes to the output files on disk.
+If your SQL hasn't changed since the last run, parsing is skipped automatically (cached). The output files are still regenerated.
 
 ---
 
-## File classification rules
+## What goes where
 
-| File | Classification |
-|---|---|
-| `sql/schema.sql` | Schema |
-| `sql/users.sql` | Schema (no `-- name:`, not in `queries/`) |
-| `sql/queries/users.sql` | Query (inside `queries/`) |
-| `sql/find_user.sql` containing `-- name: FindUser :one` | Query (has annotation) |
+sqlcx figures out which files are schema definitions and which are queries:
 
-A file with a `-- name:` annotation is always treated as a query file regardless of its directory.
+- **Schema** — `CREATE TABLE`, `CREATE TYPE` statements. Any `.sql` file without `-- name:` annotations.
+- **Queries** — Files with `-- name:` annotations, or anything inside a `queries/` subdirectory.
+
+```
+sql/
+├── schema.sql              ← schema (CREATE TABLE, CREATE TYPE)
+└── queries/
+    ├── users.sql           ← queries (-- name: GetUser :one)
+    └── posts.sql           ← queries (-- name: ListPosts :many)
+```
+
+---
+
+## Adding to your workflow
+
+**package.json:**
+```json
+{
+  "scripts": {
+    "generate": "sqlcx generate",
+    "build": "sqlcx generate && tsc"
+  }
+}
+```
+
+**Makefile:**
+```makefile
+generate:
+	sqlcx generate
+
+build: generate
+	go build ./...
+```
+
+Run it before your build step. If SQL hasn't changed, it's near-instant.
 
 ---
 
 ## See also
 
-- [check](/cli/check) — validate without writing output
+- [check](/cli/check) — validate SQL without writing files (good for CI)
 - [Configuration](/getting-started/configuration) — full `sqlcx.toml` reference

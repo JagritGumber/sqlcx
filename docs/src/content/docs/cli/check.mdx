@@ -1,80 +1,55 @@
 ---
 title: check
-description: Validate SQL files and config without generating any output files.
+description: Validate your SQL and config without generating output.
 ---
-
-## Usage
 
 ```bash
-sqlcx check
+npx sqlcx check
 ```
 
-Runs the same pipeline as `sqlcx generate` — loading config, globbing SQL files, partitioning, hashing, and parsing — but **does not write any output files**. Use this to verify your SQL and config are valid before committing or deploying.
+Does everything `generate` does — reads config, finds SQL files, parses them — but **doesn't write any output**. Use it to catch errors before committing.
 
 ---
 
-## Pipeline
+## When to use it
 
-`check` and `generate` share the same internal pipeline. The only difference is the final step:
-
-| Step | `generate` | `check` |
-|---|---|---|
-| Load config | Yes | Yes |
-| Glob SQL files | Yes | Yes |
-| Partition schema / queries | Yes | Yes |
-| Hash & cache check | Yes | Yes |
-| Parse SQL | Yes | Yes |
-| Write output files | Yes | **No** |
-
----
-
-## Output
-
-On success, `check` prints a summary to stderr and exits with code `0`:
+- **In CI** — fail the build if SQL is broken
+- **Before committing** — quick validation without regenerating files
+- **Debugging** — see if sqlcx can parse your SQL without side effects
 
 ```
-$ sqlcx check
-Loading config from /myapp
-Scanning SQL files in /myapp/sql
-Cache miss — parsing SQL files
-Check passed — 3 tables, 8 queries, 1 enums
+$ npx sqlcx check
+Check passed — 3 tables, 8 queries, 1 enum
 ```
 
-On failure (parse error, bad config, missing file), it prints an error message and exits with a non-zero code:
+If something's wrong:
 
 ```
-$ sqlcx check
-Loading config from /myapp
-Scanning SQL files in /myapp/sql
-Cache miss — parsing SQL files
+$ npx sqlcx check
 error: unknown type "uuid" at sql/schema.sql:12
 ```
 
+Exit code is `0` on success, non-zero on failure.
+
 ---
 
-## CI/CD usage
+## CI examples
 
-Add `sqlcx check` to your CI pipeline to catch SQL or config errors before they reach production.
-
-### GitHub Actions
-
+**GitHub Actions:**
 ```yaml
 - name: Validate SQL
-  run: sqlcx check
+  run: npx sqlcx check
 ```
 
-### Makefile
-
+**Makefile:**
 ```makefile
 lint:
-    sqlcx check
+	npx sqlcx check
 ```
-
-`sqlcx check` exits non-zero on any error, so it integrates naturally with `set -e` scripts and CI failure conditions.
 
 ---
 
 ## See also
 
-- [generate](/cli/generate) — full pipeline including output file generation
-- [Configuration](/getting-started/configuration) — full `sqlcx.toml` reference
+- [generate](/cli/generate) — same pipeline, but writes output files
+- [Configuration](/getting-started/configuration) — `sqlcx.toml` reference

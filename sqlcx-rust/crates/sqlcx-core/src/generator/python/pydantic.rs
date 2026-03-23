@@ -1,7 +1,7 @@
 use crate::error::Result;
 use crate::generator::{GeneratedFile, SchemaGenerator};
 use crate::ir::{ColumnDef, EnumDef, JsonShape, Overrides, SqlType, SqlTypeCategory, SqlcxIR};
-use crate::utils::{escape_string, pascal_case, snake_case};
+use crate::utils::{escape_string, pascal_case};
 use std::collections::BTreeSet;
 
 pub struct PydanticGenerator;
@@ -96,7 +96,7 @@ fn python_type(sql_type: &SqlType, overrides: &Overrides) -> String {
 
 fn select_field(col: &ColumnDef, overrides: &Overrides) -> String {
     let base = python_type(&col.sql_type, overrides);
-    let field_name = snake_case(&col.name);
+    let field_name = &col.name;
     if col.nullable {
         format!("    {}: {} | None", field_name, base)
     } else {
@@ -106,14 +106,8 @@ fn select_field(col: &ColumnDef, overrides: &Overrides) -> String {
 
 fn insert_field(col: &ColumnDef, overrides: &Overrides) -> String {
     let base = python_type(&col.sql_type, overrides);
-    let field_name = snake_case(&col.name);
-    if col.has_default {
-        if col.nullable {
-            format!("    {}: {} | None = None", field_name, base)
-        } else {
-            format!("    {}: {} | None = None", field_name, base)
-        }
-    } else if col.nullable {
+    let field_name = &col.name;
+    if col.has_default || col.nullable {
         format!("    {}: {} | None = None", field_name, base)
     } else {
         format!("    {}: {}", field_name, base)
@@ -124,7 +118,7 @@ fn insert_field(col: &ColumnDef, overrides: &Overrides) -> String {
 
 fn collect_imports(ir: &SqlcxIR, overrides: &Overrides) -> BTreeSet<String> {
     let mut imports = BTreeSet::new();
-    imports.insert("from pydantic import BaseModel".to_string());
+    imports.insert("from pydantic import BaseModel, ConfigDict".to_string());
 
     let mut needs_datetime = false;
     let mut needs_time = false;
@@ -218,13 +212,34 @@ fn collect_type_imports(
 
 // ── Generator ─────────────────────────────────────────────────────────────────
 
+/// Sanitize an enum value into a valid Python identifier.
+/// "in-progress" → "IN_PROGRESS", "class" → "CLASS_"
+fn sanitize_variant(v: &str) -> String {
+    let upper = v.to_uppercase().replace('-', "_").replace(' ', "_");
+    // Prefix with underscore if starts with digit
+    let safe = if upper.starts_with(|c: char| c.is_ascii_digit()) {
+        format!("_{}", upper)
+    } else {
+        upper
+    };
+    // Append underscore if it's a Python keyword
+    match safe.as_str() {
+        "FALSE" | "TRUE" | "NONE" | "AND" | "OR" | "NOT" | "IS" | "IN" | "IF" | "ELSE"
+        | "FOR" | "WHILE" | "CLASS" | "DEF" | "RETURN" | "IMPORT" | "FROM" | "AS" | "WITH"
+        | "YIELD" | "BREAK" | "CONTINUE" | "PASS" | "RAISE" | "TRY" | "EXCEPT" | "FINALLY" => {
+            format!("{}_", safe)
+        }
+        _ => safe,
+    }
+}
+
 fn generate_enum(enum_def: &EnumDef) -> String {
     let name = pascal_case(&enum_def.name);
     let variants: Vec<String> = enum_def
         .values
         .iter()
         .map(|v| {
-            let variant_name = v.to_uppercase();
+            let variant_name = sanitize_variant(v);
             format!("    {} = \"{}\"", variant_name, escape_string(v))
         })
         .collect();
@@ -243,7 +258,7 @@ fn generate_select_model(table: &crate::ir::TableDef, overrides: &Overrides) -> 
         .map(|col| select_field(col, overrides))
         .collect();
     format!(
-        "class {}(BaseModel):\n{}",
+        "class {}(BaseModel):\n    model_config = ConfigDict(from_attributes=True)\n\n{}",
         name,
         fields.join("\n")
     )
@@ -269,7 +284,7 @@ fn generate_insert_model(table: &crate::ir::TableDef, overrides: &Overrides) -> 
     fields.extend(optional);
 
     format!(
-        "class {}(BaseModel):\n{}",
+        "class {}(BaseModel):\n    model_config = ConfigDict(from_attributes=True)\n\n{}",
         name,
         fields.join("\n")
     )
@@ -335,10 +350,11 @@ mod tests {
         let ir = parse_fixture_ir();
         let gen = PydanticGenerator;
         let content = gen.generate_models_file(&ir, &HashMap::new());
-        assert!(content.contains("from pydantic import BaseModel"));
+        assert!(content.contains("from pydantic import BaseModel, ConfigDict"));
         assert!(content.contains("from enum import Enum"));
         assert!(content.contains("class UserStatus(str, Enum):"));
         assert!(content.contains("class SelectUsers(BaseModel):"));
+        assert!(content.contains("model_config = ConfigDict(from_attributes=True)"));
         assert!(content.contains("class InsertUsers(BaseModel):"));
         assert!(content.contains("class SelectPosts(BaseModel):"));
         assert!(content.contains("class InsertPosts(BaseModel):"));
@@ -346,7 +362,7 @@ mod tests {
     }
 
     #[test]
-    fn nullable_column_uses_optional() {
+    fn nullable_column_uses_union_none() {
         let col = ColumnDef {
             name: "bio".to_string(),
             alias: None,
@@ -387,6 +403,14 @@ mod tests {
         };
         let result = insert_field(&col, &HashMap::new());
         assert_eq!(result, "    status: str | None = None");
+    }
+
+    #[test]
+    fn sanitize_variant_handles_hyphens_and_keywords() {
+        assert_eq!(sanitize_variant("in-progress"), "IN_PROGRESS");
+        assert_eq!(sanitize_variant("class"), "CLASS_");
+        assert_eq!(sanitize_variant("active"), "ACTIVE");
+        assert_eq!(sanitize_variant("123bad"), "_123BAD");
     }
 
     #[test]

@@ -6,7 +6,7 @@ expression: content
 
 from datetime import datetime
 from enum import Enum
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 class UserStatus(str, Enum):
     ACTIVE = "active"
@@ -14,6 +14,8 @@ class UserStatus(str, Enum):
     BANNED = "banned"
 
 class SelectUsers(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: int
     name: str
     email: str
@@ -23,6 +25,8 @@ class SelectUsers(BaseModel):
     created_at: datetime
 
 class InsertUsers(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     name: str
     email: str
     id: int | None = None
@@ -32,6 +36,8 @@ class InsertUsers(BaseModel):
     created_at: datetime | None = None
 
 class SelectPosts(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: int
     user_id: int
     title: str
@@ -40,6 +46,8 @@ class SelectPosts(BaseModel):
     created_at: datetime
 
 class InsertPosts(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     user_id: int
     title: str
     body: str

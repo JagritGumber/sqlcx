@@ -1,4 +1,5 @@
 pub mod go;
+pub mod python;
 pub mod rust_lang;
 pub mod typescript;
 
@@ -28,6 +29,7 @@ pub fn resolve_language(name: &str, schema: &str, driver: &str) -> Result<Box<dy
         "typescript" => Ok(Box::new(typescript::TypeScriptPlugin::new(schema, driver)?)),
         "go" => Ok(Box::new(go::GoPlugin::new(schema, driver)?)),
         "rust" => Ok(Box::new(rust_lang::RustPlugin::new(schema, driver)?)),
+        "python" => Ok(Box::new(python::PythonPlugin::new(schema, driver)?)),
         _ => Err(crate::error::SqlcxError::UnknownLanguage(name.to_string())),
     }
 }

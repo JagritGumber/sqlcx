@@ -1,8 +1,6 @@
 <p align="center">
-  <img src="docs/public/icon.png" width="80" alt="sqlcx logo" />
+  <img src="banner.png" width="480" alt="sqlcx" />
 </p>
-
-<h1 align="center">sqlcx</h1>
 
 <p align="center">
   <strong>SQL-first. Every language. Zero runtime.</strong>

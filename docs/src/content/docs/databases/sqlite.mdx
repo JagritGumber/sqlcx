@@ -1,69 +1,68 @@
 ---
 title: SQLite
-description: SQLite support in sqlcx — type affinity mapping, AUTOINCREMENT, and conventions for booleans and datetimes.
+description: SQLite support — type affinity mapping and conventions for booleans and datetimes.
 ---
 
-sqlcx supports SQLite's type affinity system. Because SQLite is loosely typed, sqlcx applies affinity-based mapping rules and follows community conventions for booleans and datetimes.
-
-## Configuration
+SQLite is loosely typed — everything is stored as one of five affinities (NULL, INTEGER, REAL, TEXT, BLOB). sqlcx maps declared types to their affinities and follows community conventions for booleans and datetimes.
 
 ```toml
 parser = "sqlite"
 ```
 
-## Supported Features
+---
 
-- Type affinity mapping (INTEGER, REAL, TEXT, BLOB, NUMERIC)
-- `INTEGER PRIMARY KEY AUTOINCREMENT` (one word — SQLite-specific)
-- `?` positional query parameters
-- Column `DEFAULT` expressions
-- `NOT NULL` constraints
+## What's supported
 
-## Type Mapping
+| Feature | Example |
+|---------|---------|
+| Type affinity mapping | `INTEGER`, `REAL`, `TEXT`, `BLOB` |
+| Auto-increment | `INTEGER PRIMARY KEY AUTOINCREMENT` |
+| `?` parameters | Positional, in order |
+| Default values | `DEFAULT 0`, `DEFAULT CURRENT_TIMESTAMP` |
+| NOT NULL | Full constraint parsing |
+| Boolean convention | `BOOLEAN` → boolean (stored as 0/1) |
+| Datetime convention | `DATETIME` → date (stored as TEXT/INTEGER) |
 
-| SQL Type / Affinity | Generated Type | Notes |
-|---|---|---|
-| `INTEGER`, `INT`, `BIGINT`, `SMALLINT`, `REAL`, `DOUBLE`, `FLOAT` | `number` | INTEGER / REAL affinity |
-| `TEXT`, `VARCHAR`, `CHAR`, `CLOB`, `NCHAR`, `NVARCHAR` | `string` | TEXT affinity |
-| `BOOLEAN` | `boolean` | Convention (stored as 0/1) |
-| `DATETIME`, `DATE`, `TIMESTAMP` | `date` | Convention (stored as TEXT/INTEGER) |
-| `JSON` | `json` | Convention (stored as TEXT) |
-| `BLOB` | `binary` | BLOB affinity |
-| (no type / `NUMERIC`) | `unknown` | NUMERIC affinity, no clear mapping |
+---
 
-## Example Schema
+## Type mapping
+
+| SQL Type / Affinity | IR Category | Notes |
+|---------------------|-------------|-------|
+| `INTEGER`, `INT`, `BIGINT`, `SMALLINT` | number | INTEGER affinity |
+| `REAL`, `DOUBLE`, `FLOAT` | number | REAL affinity |
+| `TEXT`, `VARCHAR`, `CHAR`, `CLOB` | string | TEXT affinity |
+| `BOOLEAN` | boolean | Convention — stored as 0/1 |
+| `DATETIME`, `DATE`, `TIMESTAMP` | date | Convention — stored as TEXT or INTEGER |
+| `JSON` | json | Convention — stored as TEXT |
+| `BLOB` | binary | BLOB affinity |
+| No type / `NUMERIC` | unknown | NUMERIC affinity, no clear mapping |
+
+---
+
+## Example
 
 ```sql
 CREATE TABLE tasks (
-  id          INTEGER PRIMARY KEY AUTOINCREMENT,
-  title       TEXT NOT NULL,
-  completed   BOOLEAN NOT NULL DEFAULT 0,
-  due_date    DATETIME,
-  priority    INTEGER NOT NULL DEFAULT 1,
-  notes       TEXT
+  id        INTEGER PRIMARY KEY AUTOINCREMENT,
+  title     TEXT NOT NULL,
+  completed BOOLEAN NOT NULL DEFAULT 0,
+  due_date  DATETIME,
+  priority  INTEGER NOT NULL DEFAULT 1,
+  notes     TEXT
 );
 ```
 
 sqlcx maps `completed` to boolean and `due_date` to datetime by convention, even though SQLite stores both as integers or text internally.
 
-## SQLite-Specific Notes
+---
 
-### No ENUM Support
+## Notes
 
-SQLite has no native `ENUM` type. If you need enumerated values, store them as `TEXT` or `INTEGER` and use a `CHECK` constraint. sqlcx will map the column to `string` or `integer` accordingly — no enum type will be generated.
+**No ENUMs** — SQLite has no native enum type. Use `TEXT` with a `CHECK` constraint if you need enumerated values. sqlcx will map the column to string.
 
-### BOOLEAN is a Convention
+**BOOLEAN is 0/1** — SQLite stores booleans as integers. sqlcx recognizes the `BOOLEAN` type name and maps it accordingly, but at the database level it's always an integer.
 
-SQLite has no native boolean type. `BOOLEAN` columns are stored as integers (`0` or `1`). sqlcx recognizes the `BOOLEAN` affinity name and maps it to the `boolean` type in generated code, but at the database level it remains an integer.
+**DATETIME is TEXT** — SQLite stores dates as ISO 8601 text, Julian day numbers, or Unix timestamps. sqlcx maps `DATETIME`/`DATE`/`TIMESTAMP` to the date category by convention.
 
-### DATETIME is a Convention
-
-SQLite stores dates and times as `TEXT` (ISO 8601), `REAL` (Julian day), or `INTEGER` (Unix timestamp). sqlcx maps any column declared as `DATETIME`, `DATE`, or `TIMESTAMP` to the `datetime` type by convention, matching the SQLite documentation's recommended approach.
-
-### AUTOINCREMENT is One Word
-
-SQLite uses `AUTOINCREMENT` (one word, no underscore), unlike MySQL's `AUTO_INCREMENT`. Using `INTEGER PRIMARY KEY` without `AUTOINCREMENT` is also valid and provides auto-increment behavior — sqlcx handles both forms.
-
-### ? Parameters
-
-SQLite uses `?` as its parameter placeholder (same as MySQL). sqlcx generates parameter lists in positional order matching the `?` occurrences in the query.
+**AUTOINCREMENT** — One word, no underscore. `INTEGER PRIMARY KEY` alone also auto-increments in SQLite (without the keyword). sqlcx handles both forms.

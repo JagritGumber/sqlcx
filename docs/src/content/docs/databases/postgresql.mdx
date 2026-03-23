@@ -1,48 +1,59 @@
 ---
 title: PostgreSQL
-description: Full PostgreSQL support in sqlcx — enums, arrays, JSONB, UUID, and more.
+description: Full PostgreSQL support — enums, arrays, JSONB, UUID, and positional parameters.
 ---
 
-sqlcx supports PostgreSQL's rich type system, including custom `ENUM` types, array columns, `JSONB`, `UUID`, and positional `$1`/`$2` parameters.
-
-## Configuration
+PostgreSQL is sqlcx's most feature-complete target. Custom enums, array columns, JSONB, UUID — it all works out of the box.
 
 ```toml
 parser = "postgres"
 ```
 
-## Supported Features
+---
 
-- `CREATE TYPE … AS ENUM` (separate enum declarations)
-- `CREATE TABLE` with full column definitions
-- `SERIAL` / `BIGSERIAL` auto-increment shortcuts
-- Array columns: `TEXT[]`, `INTEGER[]`
-- Column `DEFAULT` expressions
-- `NOT NULL` constraints
-- Positional parameters: `$1`, `$2`, `$3`, …
+## What's supported
 
-## Type Mapping
+| Feature | Example |
+|---------|---------|
+| Custom ENUMs | `CREATE TYPE status AS ENUM ('active', 'banned')` |
+| Array columns | `TEXT[]`, `INTEGER[]` |
+| Auto-increment | `SERIAL`, `BIGSERIAL` |
+| Default values | `DEFAULT 'active'`, `DEFAULT NOW()` |
+| NOT NULL | Full constraint parsing |
+| Positional params | `$1`, `$2`, `$3` |
+| UUID | Maps to `str`/`string` by default |
+| JSONB / JSON | Maps to `Any`/`json.RawMessage`/`serde_json::Value` |
+| BYTEA | Maps to `bytes`/`[]byte`/`Vec<u8>` |
 
-| SQL Type | Generated Type |
-|---|---|
-| `SERIAL`, `BIGSERIAL`, `INTEGER`, `INT`, `SMALLINT`, `BIGINT`, `REAL`, `DOUBLE PRECISION`, `NUMERIC`, `DECIMAL` | `number` |
-| `TEXT`, `VARCHAR`, `CHAR` | `string` |
-| `UUID` | `uuid` |
-| `BOOLEAN` | `boolean` |
-| `TIMESTAMP`, `TIMESTAMPTZ`, `DATE`, `TIME` | `date` |
-| `JSONB`, `JSON` | `json` |
-| `BYTEA` | `binary` |
-| `TEXT[]`, `INTEGER[]`, … | inherits element category (identified by `elementType` field) |
-| Custom `ENUM` type | `enum` |
+---
 
-## Example Schema
+## Type mapping
+
+These are the IR categories sqlcx assigns to each PostgreSQL type. Each target language maps these to its own native types (see the language-specific docs).
+
+| SQL Type | IR Category |
+|----------|-------------|
+| `INTEGER`, `INT`, `SERIAL`, `SMALLINT`, `BIGINT`, `BIGSERIAL` | number |
+| `REAL`, `DOUBLE PRECISION`, `NUMERIC`, `DECIMAL`, `FLOAT` | number |
+| `TEXT`, `VARCHAR`, `CHAR` | string |
+| `UUID` | uuid |
+| `BOOLEAN` | boolean |
+| `TIMESTAMP`, `TIMESTAMPTZ`, `DATE`, `TIME` | date |
+| `JSONB`, `JSON` | json |
+| `BYTEA` | binary |
+| `TEXT[]`, `INTEGER[]`, etc. | array of element type |
+| `CREATE TYPE ... AS ENUM` | enum |
+
+---
+
+## Example
 
 ```sql
 CREATE TYPE user_status AS ENUM ('active', 'inactive', 'banned');
 
 CREATE TABLE users (
   id         SERIAL PRIMARY KEY,
-  email      TEXT NOT NULL,
+  email      TEXT NOT NULL UNIQUE,
   status     user_status NOT NULL DEFAULT 'active',
   tags       TEXT[],
   metadata   JSONB,
@@ -50,26 +61,18 @@ CREATE TABLE users (
 );
 ```
 
-sqlcx will generate a `UserStatus` enum with variants `Active`, `Inactive`, and `Banned`, and a `Users` type with all columns mapped accordingly.
+sqlcx generates a `UserStatus` enum with values `active`, `inactive`, `banned`, and a `Users` model with all columns mapped to the correct types in your target language.
 
-## PostgreSQL-Specific Notes
+---
 
-### ENUMs
+## Notes
 
-PostgreSQL ENUMs are declared separately with `CREATE TYPE … AS ENUM (…)`. sqlcx resolves column references to their enum type automatically. The enum values are PascalCased in generated code.
+**ENUMs** — Declared separately with `CREATE TYPE ... AS ENUM (...)`. sqlcx resolves column references to their enum type automatically. Values are preserved exactly as written in SQL.
 
-### Arrays
+**Arrays** — `TEXT[]` generates `list[str]` in Python, `string[]` in TypeScript, `[]string` in Go, `Vec<String>` in Rust. The element type is mapped recursively.
 
-Array columns such as `TEXT[]` inherit the category of their element type. Arrays are identified in the IR by the presence of an `elementType` field rather than a distinct category name.
+**UUID** — Maps to `str`/`string` by default. If your target language has a dedicated UUID type, use an override: `uuid = "UUID"` in your `[overrides]` section.
 
-### UUID
+**JSONB** — Maps to an untyped value (`Any`, `unknown`, `json.RawMessage`, `serde_json::Value`). For stronger typing, use the `@json` annotation on your query to define the shape.
 
-`UUID` columns map to `uuid` — their own distinct category, separate from `string`. If your target language has a dedicated UUID type, it will be used automatically; you can also configure a custom override in `sqlcx.toml`.
-
-### JSONB / JSON
-
-Both `JSONB` and `JSON` map to the `json` type, which generates as an untyped object or `any` depending on the language target. Use inline type overrides for stronger typing.
-
-### Positional Parameters
-
-PostgreSQL uses `$1`, `$2`, … for query parameters. sqlcx parses these and generates typed parameter lists in the correct order.
+**Parameters** — PostgreSQL uses `$1`, `$2`, `$3` positional parameters. sqlcx parses these and generates typed parameter lists in the correct order. Use `@param` annotations to give them names.

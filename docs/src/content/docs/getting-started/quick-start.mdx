@@ -1,15 +1,15 @@
 ---
 title: Quick Start
-description: Generate your first typed query in under five minutes.
+description: From zero to typed queries in five minutes.
 ---
 
 import { Steps, Tabs, TabItem } from '@astrojs/starlight/components';
 
-This guide walks from zero to a fully typed query using TypeScript, Bun SQL, and TypeBox.
+You'll write a SQL schema, add a query, run one command, and get fully typed code back. Five minutes.
 
 <Steps>
 
-1. **Create your project**
+1. **Set up your project**
 
    ```bash
    mkdir myapp && cd myapp
@@ -18,25 +18,25 @@ This guide walks from zero to a fully typed query using TypeScript, Bun SQL, and
    mkdir -p sql/queries
    ```
 
-2. **Write your schema**
+2. **Define your schema** — `sql/schema.sql`
 
-   Create `sql/schema.sql`:
+   This is your source of truth. Everything sqlcx generates comes from here.
 
    ```sql
    CREATE TYPE user_status AS ENUM ('active', 'inactive', 'banned');
 
    CREATE TABLE users (
-     id        SERIAL PRIMARY KEY,
-     name      TEXT        NOT NULL,
-     email     TEXT        NOT NULL UNIQUE,
-     status    user_status NOT NULL DEFAULT 'active',
+     id         SERIAL      PRIMARY KEY,
+     name       TEXT        NOT NULL,
+     email      TEXT        NOT NULL UNIQUE,
+     status     user_status NOT NULL DEFAULT 'active',
      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
    );
    ```
 
-3. **Write your queries**
+3. **Write your queries** — `sql/queries/users.sql`
 
-   Create `sql/queries/users.sql`:
+   Annotate each query with a name and return type. That's all sqlcx needs.
 
    ```sql
    -- name: GetUser :one
@@ -54,23 +54,62 @@ This guide walks from zero to a fully typed query using TypeScript, Bun SQL, and
    VALUES ($1, $2);
    ```
 
-4. **Configure sqlcx**
+   `:one` returns a single row (or null). `:many` returns an array. `:exec` returns nothing.
 
-   Create `sqlcx.toml` at the project root:
+4. **Configure** — `sqlcx.toml`
 
-   ```toml
-   sql     = ["sql/queries"]
-   parser  = "postgres"
+   Tell sqlcx what dialect you're using and where to write the output.
 
-   [[targets]]
-   language  = "typescript"
-   out       = "src/generated"
-   schema    = "sql/schema.sql"
-   driver    = "bun-sql"
+   <Tabs>
+     <TabItem label="TypeScript">
+       ```toml
+       sql    = "./sql"
+       parser = "postgres"
 
-   [targets.overrides]
-   validation = "typebox"
-   ```
+       [[targets]]
+       language = "typescript"
+       out      = "src/generated"
+       schema   = "typebox"
+       driver   = "bun-sql"
+       ```
+     </TabItem>
+     <TabItem label="Python">
+       ```toml
+       sql    = "./sql"
+       parser = "postgres"
+
+       [[targets]]
+       language = "python"
+       out      = "src/generated"
+       schema   = "pydantic"
+       driver   = "none"
+       ```
+     </TabItem>
+     <TabItem label="Go">
+       ```toml
+       sql    = "./sql"
+       parser = "postgres"
+
+       [[targets]]
+       language = "go"
+       out      = "db"
+       schema   = "structs"
+       driver   = "database-sql"
+       ```
+     </TabItem>
+     <TabItem label="Rust">
+       ```toml
+       sql    = "./sql"
+       parser = "postgres"
+
+       [[targets]]
+       language = "rust"
+       out      = "src/db"
+       schema   = "serde"
+       driver   = "sqlx"
+       ```
+     </TabItem>
+   </Tabs>
 
 5. **Generate**
 
@@ -78,29 +117,37 @@ This guide walks from zero to a fully typed query using TypeScript, Bun SQL, and
    npx sqlcx generate
    ```
 
-   sqlcx reads your schema and queries, then writes typed TypeScript files into `src/generated/`.
+   Done. Check your output directory — typed code is waiting.
 
-6. **Use the generated code**
+6. **Use it**
 
-   ```typescript
-   import { sql } from 'bun';
-   import { getUser, listUsers, createUser } from './generated/users';
+   <Tabs>
+     <TabItem label="TypeScript">
+       ```typescript
+       import { sql } from 'bun';
+       import { getUser, listUsers, createUser } from './generated/users';
 
-   // Insert a user
-   await createUser(sql, { name: 'Alice', email: 'alice@example.com' });
+       await createUser(sql, { name: 'Alice', email: 'alice@example.com' });
 
-   // Fetch a single user — fully typed
-   const user = await getUser(sql, { id: 1 });
-   console.log(user.name, user.status);
+       const user = await getUser(sql, { id: 1 });
+       console.log(user.name, user.status);
+       //          ^? string   ^? "active" | "inactive" | "banned"
+       ```
+     </TabItem>
+     <TabItem label="Python">
+       ```python
+       from generated.models import SelectUsers, UserStatus
 
-   // Fetch all users
-   const users = await listUsers(sql);
-   for (const u of users) {
-     console.log(u.email);
-   }
-   ```
+       user = SelectUsers(
+           id=1, name="Alice", email="alice@example.com",
+           status=UserStatus.ACTIVE, created_at=datetime.now()
+       )
+       print(user.name)  # fully typed, validated by Pydantic
+       ```
+     </TabItem>
+   </Tabs>
 
-   Every parameter and return value is typed directly from your SQL schema. No type assertions, no `any`.
+   Every parameter and return value is typed from your SQL. No `any`. No type assertions. No guessing.
 
 </Steps>
 
@@ -108,20 +155,20 @@ This guide walks from zero to a fully typed query using TypeScript, Bun SQL, and
 
 ## What was generated?
 
-Running `npx sqlcx generate` produced files like:
-
 ```
 src/generated/
-  users.ts        — typed query functions
-  schema.ts       — TypeBox validators for each table
+├── schema.ts         # TypeBox/Zod validators for every table
+├── client.ts         # Database client wrapper
+└── users.queries.ts  # Typed functions for each named query
 ```
 
-The generated code imports only your database driver. There is no sqlcx runtime dependency at execution time.
+The generated code imports only your database driver. There is no sqlcx runtime dependency. You can read every line.
 
 ---
 
-## Next steps
+## What's next?
 
-- [Configuration](/getting-started/configuration) — full reference for `sqlcx.toml`
-- [TypeBox](/typescript/typebox) — using TypeBox validators with the generated schema
-- [Bun SQL](/typescript/bun-sql) — Bun SQL driver details
+- [Configuration](/getting-started/configuration) — full `sqlcx.toml` reference
+- [TypeBox](/typescript/typebox) — TypeScript schema validation
+- [Pydantic](/python/pydantic) — Python model generation
+- [PostgreSQL](/databases/postgresql) — database-specific features

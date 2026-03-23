@@ -1,13 +1,11 @@
 ---
 title: Installation
-description: Install the sqlcx CLI and runtime package.
+description: Install sqlcx in under 30 seconds.
 ---
 
-import { Tabs, TabItem } from '@astrojs/starlight/components';
+import { Tabs, TabItem, Steps } from '@astrojs/starlight/components';
 
-## Install the CLI
-
-The `sqlcx` CLI reads your SQL schema and query files, then generates typed client code.
+## Install
 
 <Tabs>
   <TabItem label="npm">
@@ -20,48 +18,37 @@ The `sqlcx` CLI reads your SQL schema and query files, then generates typed clie
     cargo install sqlcx
     ```
   </TabItem>
-  <TabItem label="pip">
-    ```bash
-    pip install sqlcx  # coming soon
-    ```
-  </TabItem>
-  <TabItem label="brew">
-    ```bash
-    brew install sqlcx  # coming soon
-    ```
-  </TabItem>
 </Tabs>
 
+That's it. No daemon, no engine binary, no background process. sqlcx is a build tool — it runs once, generates code, and gets out of the way.
+
 ---
 
-## Verify the install
-
-After installing, confirm the CLI is available:
+## Verify
 
 ```bash
-sqlcx --help
+npx sqlcx --version
 ```
 
-Expected output:
+You should see the version number. If you installed via cargo:
 
-```
-sqlcx - SQL-first code generation for every language
-
-Usage: sqlcx <command> [options]
-
-Commands:
-  generate    Generate typed client code from SQL queries
-  check       Verify generated code is up to date
-  init        Create a new sqlcx.toml configuration file
-  schema      Inspect and validate your SQL schema
-
-Options:
-  --help, -h     Show help
-  --version, -v  Show version
+```bash
+sqlcx --version
 ```
 
 ---
 
-## Next steps
+## What gets installed?
 
-Continue to [Quick Start](/getting-started/quick-start) to generate your first typed query in under five minutes.
+| Package | What it is | Size |
+|---------|-----------|------|
+| `sqlcx-orm` (npm) | CLI + codegen engine | ~2 MB |
+| `sqlcx` (cargo) | Native binary | ~3 MB |
+
+No runtime libraries. No query engines. The generated code imports only your database driver — sqlcx itself is never a production dependency.
+
+---
+
+## Next
+
+→ [Quick Start](/getting-started/quick-start) — generate your first typed query in under five minutes

@@ -3,28 +3,50 @@ title: Why sqlcx?
 description: SQL is the source of truth. Zero runtime. Every language.
 ---
 
-import { Tabs, TabItem } from '@astrojs/starlight/components';
+import { Tabs, TabItem, Card, CardGrid } from '@astrojs/starlight/components';
 
-## The problem with modern ORMs
+You already know the best language for talking to databases. It's SQL.
 
-Every popular ORM ships with trade-offs that compound at scale.
+The problem isn't SQL — it's everything ORMs build on top of it. Schema DSLs, query builders, runtime engines, type-level gymnastics. Every layer adds weight, complexity, and another thing that can break.
 
-**Prisma** bundles a 1.6 MB query engine binary and a JavaScript runtime on top of it. Your Lambda cold start pays for it every time.
+sqlcx takes a different approach: **write SQL, generate code, ship nothing.**
 
-**Drizzle** is lighter, but its deep TypeScript generics slow down IDE type-checking on large schemas — the more tables you add, the more your editor lags.
+---
 
-**sqlc** generates type-safe code from plain SQL, but it only targets Go. TypeScript, Rust, and Python developers are left out.
+## What's wrong with the status quo?
+
+<CardGrid>
+  <Card title="Prisma" icon="warning">
+    Ships a **1.6 MB** query engine binary. Every Lambda cold start pays for it. Every Docker image carries it. And you can't read the SQL it generates without enabling debug logging.
+  </Card>
+  <Card title="Drizzle" icon="warning">
+    Lighter at ~7.4 KB, but your schema lives in TypeScript, not SQL. Deep generics slow down IDE type-checking on large schemas. If you have a DBA writing migrations in SQL, someone has to translate.
+  </Card>
+  <Card title="sqlc" icon="warning">
+    Got the approach right — SQL-first, zero runtime, typed output. But it only targets Go. TypeScript, Rust, and Python developers are left out.
+  </Card>
+</CardGrid>
 
 ---
 
 ## The sqlcx approach
 
-sqlcx treats SQL as the single source of truth and generates idiomatic, typed client code for every target language — with no runtime library required.
+Write SQL. Get typed code. Ship nothing.
+
+```
+┌─────────────┐     ┌─────────┐     ┌──────────────────┐
+│  schema.sql  │────▶│  sqlcx   │────▶│  typed code      │
+│  queries.sql │     │  (build) │     │  (TS, Go, Rust,  │
+└─────────────┘     └─────────┘     │   Python)         │
+                                     └──────────────────┘
+                         ↓
+                    0 KB runtime
+```
 
 - **SQL is the schema.** You write `CREATE TABLE` and named queries. sqlcx reads them.
 - **Zero runtime.** Generated code calls your database driver directly. There is nothing between your query and the wire.
-- **Every language.** One tool, one config, multiple output targets.
-- **Open validation.** Pick TypeBox, Zod, or Serde — sqlcx plugs into the ecosystem you already use.
+- **Every language.** One SQL source, one config — TypeScript, Go, Rust, and Python output.
+- **Open validation.** Pick TypeBox, Zod, Pydantic, or Serde. sqlcx plugs into the ecosystem you already use.
 
 > If you know SQL, you already know sqlcx.
 
@@ -32,13 +54,13 @@ sqlcx treats SQL as the single source of truth and generates idiomatic, typed cl
 
 ## Runtime bundle comparison
 
-| Tool | Runtime bundle size |
-|------|-------------------|
-| **sqlcx** | **0 KB** |
-| Drizzle | ~7.4 KB (minified) |
-| Prisma | ~1.6 MB (query engine) |
+| Tool | Runtime bundle | What you're shipping |
+|------|---------------|---------------------|
+| **sqlcx** | **0 KB** | Nothing. Generated code only. |
+| Drizzle | ~7.4 KB | Query builder runtime |
+| Prisma | ~1.6 MB | Binary query engine + JS runtime |
 
-sqlcx generates code. There is nothing to ship at runtime.
+sqlcx generates code at build time. At runtime, the only thing running is your SQL hitting the driver. That's it.
 
 ---
 
@@ -58,38 +80,45 @@ Use the generated code in any language:
 <Tabs>
   <TabItem label="TypeScript">
     ```typescript
-    import { getUser } from './generated/users';
-    import { sql } from 'bun';
-
     const user = await getUser(sql, { id: 42 });
-    console.log(user.name);
+    console.log(user.name); // fully typed
+    ```
+  </TabItem>
+  <TabItem label="Python">
+    ```python
+    user = SelectUsers.model_validate(dict(row))
+    print(user.name)  # fully typed with Pydantic
     ```
   </TabItem>
   <TabItem label="Go">
     ```go
-    import "github.com/example/myapp/generated"
-
     user, err := queries.GetUser(ctx, 42)
-    if err != nil {
-        return err
-    }
-    fmt.Println(user.Name)
+    fmt.Println(user.Name) // fully typed struct
     ```
   </TabItem>
   <TabItem label="Rust">
     ```rust
-    use crate::generated::get_user;
-
     let user = get_user(&pool, 42).await?;
-    println!("{}", user.name);
+    println!("{}", user.name); // fully typed with serde
     ```
   </TabItem>
 </Tabs>
 
-Every version is fully typed from your schema. No hand-written interfaces. No runtime surprises.
+Every version is fully typed from your schema. No hand-written interfaces. No runtime surprises. No `any`.
+
+---
+
+## Who is sqlcx for?
+
+- **Teams with polyglot backends** — same SQL, different services, different languages, one source of truth
+- **Performance-sensitive deployments** — serverless, edge, embedded — where every KB matters
+- **SQL-first developers** — you write SQL by hand and want the types to follow, not the other way around
+- **Anyone tired of ORMs** — no more fighting abstractions to write the query you actually want
 
 ---
 
 ## Ready to try it?
 
-Head to [Installation](/getting-started/installation) to get started in under two minutes.
+Get your first typed query in under five minutes.
+
+→ [Quick Start](/getting-started/quick-start)

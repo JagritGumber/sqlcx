@@ -39,15 +39,71 @@ fn run(cli: Cli) -> sqlcx_core::error::Result<()> {
     match cli.command {
         Commands::Generate => run_pipeline(true),
         Commands::Check => run_pipeline(false),
-        Commands::Init => {
-            eprintln!("error: init command not yet implemented");
-            std::process::exit(1);
-        }
+        Commands::Init => run_init(),
         Commands::Schema => {
             eprintln!("error: schema command not yet implemented");
             std::process::exit(1);
         }
     }
+}
+
+fn run_init() -> sqlcx_core::error::Result<()> {
+    let cwd = std::env::current_dir()?;
+
+    let config_path = cwd.join("sqlcx.toml");
+    if config_path.exists() {
+        return Err(sqlcx_core::error::SqlcxError::ConfigInvalid(
+            "sqlcx.toml already exists in this directory".to_string(),
+        ));
+    }
+
+    let sql_dir = cwd.join("sql");
+    let queries_dir = sql_dir.join("queries");
+    std::fs::create_dir_all(&queries_dir)?;
+
+    std::fs::write(
+        &config_path,
+        r#"sql    = "./sql"
+parser = "postgres"
+
+[[targets]]
+language = "typescript"
+out      = "./src/db"
+schema   = "typebox"
+driver   = "bun-sql"
+"#,
+    )?;
+
+    std::fs::write(
+        sql_dir.join("schema.sql"),
+        r#"CREATE TABLE users (
+  id         SERIAL      PRIMARY KEY,
+  name       TEXT        NOT NULL,
+  email      TEXT        NOT NULL UNIQUE,
+  created_at TIMESTAMP   NOT NULL DEFAULT NOW()
+);
+"#,
+    )?;
+
+    std::fs::write(
+        queries_dir.join("users.sql"),
+        r#"-- name: GetUser :one
+SELECT * FROM users WHERE id = $1;
+
+-- name: ListUsers :many
+SELECT id, name, email FROM users ORDER BY created_at DESC;
+
+-- name: CreateUser :exec
+INSERT INTO users (name, email) VALUES ($1, $2);
+"#,
+    )?;
+
+    eprintln!("Created sqlcx.toml");
+    eprintln!("Created sql/schema.sql");
+    eprintln!("Created sql/queries/users.sql");
+    eprintln!();
+    eprintln!("Run `sqlcx generate` to generate typed code.");
+    Ok(())
 }
 
 fn run_pipeline(write_output: bool) -> sqlcx_core::error::Result<()> {

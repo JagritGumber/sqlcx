@@ -12,9 +12,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/JagritGumber/sqlcx/actions"><img src="https://img.shields.io/github/actions/workflow/status/JagritGumber/sqlcx/ci.yml?style=flat-square" alt="CI" /></a>
   <a href="https://www.npmjs.com/package/sqlcx-orm"><img src="https://img.shields.io/npm/v/sqlcx-orm?style=flat-square&color=c5d96e" alt="npm" /></a>
-  <a href="https://crates.io/crates/sqlcx"><img src="https://img.shields.io/crates/v/sqlcx?style=flat-square&color=c5d96e" alt="crates.io" /></a>
   <a href="https://github.com/JagritGumber/sqlcx/blob/main/LICENSE"><img src="https://img.shields.io/github/license/JagritGumber/sqlcx?style=flat-square" alt="MIT" /></a>
 </p>
 

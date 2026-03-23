@@ -1,0 +1,41 @@
+---
+import '../styles/custom.css';
+import Hero from '../components/Hero.astro';
+import RuntimeBars from '../components/RuntimeBars.astro';
+import DatabaseStrip from '../components/DatabaseStrip.astro';
+import BentoFeatures from '../components/BentoFeatures.astro';
+import FooterCTA from '../components/FooterCTA.astro';
+---
+
+<html lang="en" class="dark" data-theme="dark">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>sqlcx — SQL-first. Every language. Zero runtime.</title>
+  <meta name="description" content="Write SQL once, generate type-safe code for TypeScript, Go, and Rust. Zero runtime overhead." />
+  <link rel="icon" type="image/png" href="/icon.png" />
+</head>
+<body class="bg-surface text-white font-sans antialiased selection:bg-lime selection:text-on-primary">
+  <!-- Nav -->
+  <nav class="fixed top-0 w-full flex justify-between items-center px-8 py-4 max-w-[1440px] left-1/2 -translate-x-1/2 z-50 bg-surface/80 backdrop-blur-xl border-b border-white/5">
+    <div class="text-2xl font-black text-white tracking-tighter font-headline">sqlcx</div>
+    <div class="hidden md:flex items-center gap-8 font-headline font-bold tracking-tight">
+      <a class="text-lime border-b-2 border-lime pb-1 transition-colors no-underline" href="/getting-started/quick-start/">Docs</a>
+      <a class="text-muted hover:text-white transition-colors no-underline" href="https://github.com/JagritGumber/sqlcx" target="_blank" rel="noopener">GitHub</a>
+    </div>
+    <div class="flex items-center gap-4">
+      <a href="/getting-started/quick-start/" class="primary-gradient text-on-primary px-6 py-2 rounded-md font-headline font-bold text-sm tracking-tight no-underline hover:shadow-[0_0_15px_rgba(213,251,42,0.3)] transition-shadow">Get Started</a>
+    </div>
+  </nav>
+
+  <!-- Content -->
+  <main class="pt-24">
+    <Hero />
+    <RuntimeBars />
+    <DatabaseStrip />
+    <BentoFeatures />
+  </main>
+
+  <FooterCTA />
+</body>
+</html>

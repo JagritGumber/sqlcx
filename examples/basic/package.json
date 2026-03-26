@@ -2,9 +2,9 @@
   "name": "sqlcx-example-basic",
   "private": true,
   "scripts": {
-    "generate": "sqlcx generate --sql ./sql --out ./src/db"
+    "generate": "sqlcx generate"
   },
   "dependencies": {
-    "sqlcx": "file:../../"
+    "sqlcx-orm": "^1.0.0"
   }
 }

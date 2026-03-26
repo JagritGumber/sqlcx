@@ -1,0 +1,8 @@
+sql    = "./sql"
+parser = "postgres"
+
+[[targets]]
+language = "typescript"
+out      = "./src/db"
+schema   = "typebox"
+driver   = "bun-sql"

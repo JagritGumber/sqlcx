@@ -25,17 +25,22 @@ fn ts_type(sql_type: &SqlType) -> String {
     }
 }
 
-/// Convert $1, $2, ... placeholders to ? for MySQL
-fn to_mysql_params(sql: &str) -> String {
+/// Convert $1, $2, ... placeholders to ? for MySQL.
+/// Returns the converted SQL and the param indices in occurrence order
+/// (handles reused params like $1 OR $1 and out-of-order like $2 AND $1).
+fn to_mysql_params(sql: &str) -> (String, Vec<u32>) {
     let mut result = String::with_capacity(sql.len());
+    let mut indices = Vec::new();
     let mut chars = sql.chars().peekable();
     while let Some(c) = chars.next() {
         if c == '$' {
             if chars.peek().map_or(false, |ch| ch.is_ascii_digit()) {
-                result.push('?');
+                let mut num_str = String::new();
                 while chars.peek().map_or(false, |ch| ch.is_ascii_digit()) {
-                    chars.next();
+                    num_str.push(chars.next().unwrap());
                 }
+                result.push('?');
+                indices.push(num_str.parse::<u32>().unwrap_or(0));
             } else {
                 result.push(c);
             }
@@ -43,7 +48,7 @@ fn to_mysql_params(sql: &str) -> String {
             result.push(c);
         }
     }
-    result
+    (result, indices)
 }
 
 fn generate_row_type(query: &QueryDef) -> String {
@@ -77,15 +82,15 @@ fn generate_params_type(query: &QueryDef) -> String {
     format!("export interface {type_name} {{\n{}\n}}", fields.join("\n"))
 }
 
-fn json_stringify(s: &str) -> String {
-    let mysql_sql = to_mysql_params(s);
+fn json_stringify_mysql(s: &str) -> (String, Vec<u32>) {
+    let (mysql_sql, indices) = to_mysql_params(s);
     let escaped = mysql_sql
         .replace('\\', "\\\\")
         .replace('"', "\\\"")
         .replace('\n', "\\n")
         .replace('\r', "\\r")
         .replace('\t', "\\t");
-    format!("\"{escaped}\"")
+    (format!("\"{escaped}\""), indices)
 }
 
 fn generate_query_function(query: &QueryDef) -> String {
@@ -94,7 +99,8 @@ fn generate_query_function(query: &QueryDef) -> String {
     let params_interface = generate_params_type(query);
     let has_params = !query.params.is_empty();
     let params_type_name = format!("{}Params", pascal_case(&query.name));
-    let sql_const = format!("export const {fn_name}Sql = {};", json_stringify(&query.sql));
+    let (sql_str, param_indices) = json_stringify_mysql(&query.sql);
+    let sql_const = format!("export const {fn_name}Sql = {sql_str};");
 
     let params_sig = if has_params {
         format!(", params: {params_type_name}")
@@ -102,11 +108,17 @@ fn generate_query_function(query: &QueryDef) -> String {
         String::new()
     };
 
+    // Build values array in SQL occurrence order (handles $2 AND $1, $1 OR $1)
     let values_arg = if has_params {
-        let args: Vec<String> = query
-            .params
+        let args: Vec<String> = param_indices
             .iter()
-            .map(|p| format!("params.{}", p.name))
+            .map(|idx| {
+                query.params
+                    .iter()
+                    .find(|p| p.index == *idx)
+                    .map(|p| format!("params.{}", p.name))
+                    .unwrap_or_else(|| "undefined".to_string())
+            })
             .collect();
         format!("[{}]", args.join(", "))
     } else {
@@ -265,8 +277,26 @@ mod tests {
 
     #[test]
     fn converts_dollar_params_to_question_marks() {
-        assert_eq!(to_mysql_params("SELECT * FROM users WHERE id = $1"), "SELECT * FROM users WHERE id = ?");
-        assert_eq!(to_mysql_params("INSERT INTO users (a, b) VALUES ($1, $2)"), "INSERT INTO users (a, b) VALUES (?, ?)");
-        assert_eq!(to_mysql_params("SELECT * FROM users"), "SELECT * FROM users");
+        let (sql, idx) = to_mysql_params("SELECT * FROM users WHERE id = $1");
+        assert_eq!(sql, "SELECT * FROM users WHERE id = ?");
+        assert_eq!(idx, vec![1]);
+
+        let (sql, idx) = to_mysql_params("INSERT INTO users (a, b) VALUES ($1, $2)");
+        assert_eq!(sql, "INSERT INTO users (a, b) VALUES (?, ?)");
+        assert_eq!(idx, vec![1, 2]);
+
+        let (sql, idx) = to_mysql_params("SELECT * FROM users");
+        assert_eq!(sql, "SELECT * FROM users");
+        assert!(idx.is_empty());
+
+        // Reused params
+        let (sql, idx) = to_mysql_params("WHERE a = $1 OR b = $1");
+        assert_eq!(sql, "WHERE a = ? OR b = ?");
+        assert_eq!(idx, vec![1, 1]);
+
+        // Out-of-order params
+        let (sql, idx) = to_mysql_params("WHERE a = $2 AND b = $1");
+        assert_eq!(sql, "WHERE a = ? AND b = ?");
+        assert_eq!(idx, vec![2, 1]);
     }
 }

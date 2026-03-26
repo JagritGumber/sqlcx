@@ -7,6 +7,8 @@ package db
 
 import (
 	"context"
+	"errors"
+	"github.com/jackc/pgx/v5"
 	"time"
 )
 
@@ -27,6 +29,9 @@ func (q *Queries) GetUser(ctx context.Context, id int64) (*GetUserRow, error) {
 	var i GetUserRow
 	err := row.Scan(&i.Id, &i.Name, &i.Email, &i.Bio, &i.Status, &i.Tags, &i.CreatedAt)
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, nil
+		}
 		return nil, err
 	}
 	return &i, nil

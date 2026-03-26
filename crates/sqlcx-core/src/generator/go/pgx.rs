@@ -163,6 +163,9 @@ fn generate_query_function(query: &QueryDef) -> String {
 \tvar i {}
 \terr := row.Scan({})
 \tif err != nil {{
+\t\tif errors.Is(err, pgx.ErrNoRows) {{
+\t\t\treturn nil, nil
+\t\t}}
 \t\treturn nil, err
 \t}}
 \treturn &i, nil\n}}",
@@ -226,9 +229,14 @@ fn collect_query_imports(queries: &[QueryDef]) -> BTreeSet<String> {
     let mut imports = BTreeSet::new();
     imports.insert("context".to_string());
 
+    let mut needs_pgx_err = false;
     for query in queries {
         let ret_imports = go_imports_for_columns(&query.returns);
         imports.extend(ret_imports);
+
+        if query.command == QueryCommand::One {
+            needs_pgx_err = true;
+        }
 
         for param in &query.params {
             let col = ColumnDef {
@@ -242,6 +250,11 @@ fn collect_query_imports(queries: &[QueryDef]) -> BTreeSet<String> {
             let col_imports = go_imports_for_columns(&[col]);
             imports.extend(col_imports);
         }
+    }
+
+    if needs_pgx_err {
+        imports.insert("errors".to_string());
+        imports.insert("github.com/jackc/pgx/v5".to_string());
     }
 
     imports

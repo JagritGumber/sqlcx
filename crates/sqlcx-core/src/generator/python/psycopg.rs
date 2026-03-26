@@ -77,17 +77,25 @@ fn generate_params_class(query: &QueryDef) -> String {
     format!("@dataclass\nclass {}:\n{}", class_name, fields.join("\n"))
 }
 
-/// Convert $1, $2, ... placeholders to %s for psycopg3
-fn to_psycopg_params(sql: &str) -> String {
+/// Convert $1, $2, ... placeholders to %(param_name)s for psycopg3.
+/// Uses named params to correctly handle reused ($1 OR $1) and out-of-order ($2 AND $1) params.
+fn to_psycopg_params(sql: &str, params: &[crate::ir::ParamDef]) -> String {
     let mut result = String::with_capacity(sql.len());
     let mut chars = sql.chars().peekable();
     while let Some(c) = chars.next() {
         if c == '$' {
             if chars.peek().map_or(false, |ch| ch.is_ascii_digit()) {
-                result.push_str("%s");
+                let mut num_str = String::new();
                 while chars.peek().map_or(false, |ch| ch.is_ascii_digit()) {
-                    chars.next();
+                    num_str.push(chars.next().unwrap());
                 }
+                let idx: u32 = num_str.parse().unwrap_or(0);
+                let name = params
+                    .iter()
+                    .find(|p| p.index == idx)
+                    .map(|p| p.name.as_str())
+                    .unwrap_or("unknown");
+                result.push_str(&format!("%({})s", name));
             } else {
                 result.push(c);
             }
@@ -98,8 +106,8 @@ fn to_psycopg_params(sql: &str) -> String {
     result
 }
 
-fn escape_sql(s: &str) -> String {
-    let converted = to_psycopg_params(s);
+fn escape_sql(s: &str, params: &[crate::ir::ParamDef]) -> String {
+    let converted = to_psycopg_params(s, params);
     converted
         .replace('\\', "\\\\")
         .replace('"', "\\\"")
@@ -114,7 +122,7 @@ fn generate_query_function(query: &QueryDef) -> String {
     let params_class = generate_params_class(query);
     let has_params = !query.params.is_empty();
     let params_type_name = format!("{}Params", pascal_case(&query.name));
-    let sql_const = format!("{}_SQL = \"{}\"", fn_name.to_uppercase(), escape_sql(&query.sql));
+    let sql_const = format!("{}_SQL = \"{}\"", fn_name.to_uppercase(), escape_sql(&query.sql, &query.params));
 
     let params_sig = if has_params {
         format!(", params: {}", params_type_name)
@@ -126,11 +134,11 @@ fn generate_query_function(query: &QueryDef) -> String {
         let args: Vec<String> = query
             .params
             .iter()
-            .map(|p| format!("params.{}", p.name))
+            .map(|p| format!("\"{}\": params.{}", p.name, p.name))
             .collect();
-        format!("({}{})", args.join(", "), if args.len() == 1 { "," } else { "" })
+        format!("{{{}}}", args.join(", "))
     } else {
-        "()".to_string()
+        "{}".to_string()
     };
 
     let (return_type, body) = match query.command {

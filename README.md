@@ -38,9 +38,10 @@ sql/queries/users.sql ──┤── sqlcx generate ──┬── schema.ts +
 |---|---|---|---|---|
 | **Runtime bundle** | **0 KB** | 1.6 MB | 7.4 KB | **0 KB** |
 | **TypeScript** | ✓ | ✓ | ✓ | Community |
-| **Python** | ✓ (Pydantic) | ✓ | — | Community |
+| **Python** | ✓ (Pydantic + psycopg/asyncpg) | ✓ | — | Community |
 | **Go** | ✓ | — | — | ✓ |
 | **Rust** | ✓ | — | — | — |
+| **Drivers** | **10** (4 TS, 2 Py, 2 Go, 2 Rust) | 1 | 1 | 1 |
 | **Validation** | TypeBox, Zod, Pydantic, Serde | Built-in | Built-in | — |
 | **Multi-language** | ✓ (one SQL, all targets) | — | — | Go only |
 
@@ -110,7 +111,7 @@ driver   = "bun-sql"
 language = "python"
 out      = "py/generated"
 schema   = "pydantic"
-driver   = "none"
+driver   = "psycopg"
 ```
 
 ### 4. Generate
@@ -130,12 +131,13 @@ console.log(user.name);    // string
 console.log(user.status);  // "active" | "inactive" | "banned"
 ```
 
-**Python:**
+**Python (psycopg):**
 ```python
-from generated.models import SelectUsers, UserStatus
+from generated.users_queries import get_user, list_users, create_user
 
-user = SelectUsers(id=1, name="Alice", email="alice@example.com",
-                   status=UserStatus.ACTIVE, created_at=datetime.now())
+user = get_user(conn, GetUserParams(id=42))
+print(user.name)    # str
+print(user.status)  # str
 ```
 
 **Go:**
@@ -272,9 +274,14 @@ $ npx sqlcx generate    # ~20ms
 |----------|--------|-------------|
 | TypeScript | `bun-sql` | Typed functions for Bun's built-in SQL |
 | TypeScript | `pg` | Typed functions for node-postgres |
+| TypeScript | `mysql2` | Typed functions for mysql2 (MySQL) |
+| TypeScript | `better-sqlite3` | Typed synchronous functions for better-sqlite3 (SQLite) |
+| Python | `psycopg` | Typed functions for psycopg3 (sync Postgres) |
+| Python | `asyncpg` | Typed async functions for asyncpg (async Postgres) |
 | Go | `database-sql` | Typed functions for `database/sql` |
+| Go | `pgx` | Typed functions for jackc/pgx v5 (modern Postgres) |
 | Rust | `sqlx` | Typed async functions for sqlx |
-| Python | `none` | Schema-only (driver coming soon) |
+| Rust | `tokio-postgres` | Typed async functions for tokio-postgres |
 
 ### Database Parsers
 
@@ -291,7 +298,7 @@ $ npx sqlcx generate    # ~20ms
 ```bash
 npx sqlcx generate    # Parse SQL → generate typed code
 npx sqlcx check       # Validate SQL without generating (CI-friendly)
-npx sqlcx init        # Scaffold sql/ directory + sqlcx.toml (coming soon)
+npx sqlcx init        # Scaffold sql/ directory + sqlcx.toml
 npx sqlcx schema      # Emit JSON Schema for config validation (coming soon)
 ```
 
@@ -328,13 +335,13 @@ driver   = "bun-sql"
 language = "python"
 out      = "py/generated"
 schema   = "pydantic"
-driver   = "none"
+driver   = "asyncpg"
 
 [[targets]]
 language = "go"
 out      = "internal/db"
 schema   = "structs"
-driver   = "database-sql"
+driver   = "pgx"
 
 [[targets]]
 language = "rust"
@@ -358,9 +365,13 @@ uuid = "string"    # Map UUID to string in all targets
 SQL files ──▶ Parser (postgres/mysql/sqlite) ──▶ IR (tables, queries, enums)
                                                     │
                                                     ├──▶ TypeScript Plugin ──▶ schema.ts + queries.ts
-                                                    ├──▶ Python Plugin    ──▶ models.py
+                                                    │    (bun-sql, pg, mysql2, better-sqlite3)
+                                                    ├──▶ Python Plugin    ──▶ models.py + queries.py
+                                                    │    (psycopg, asyncpg)
                                                     ├──▶ Go Plugin        ──▶ models.go + queries.go
+                                                    │    (database-sql, pgx)
                                                     └──▶ Rust Plugin      ──▶ models.rs + queries.rs
+                                                         (sqlx, tokio-postgres)
 ```
 
 The IR (Intermediate Representation) is language-agnostic and cacheable. Each language plugin consumes the same IR and produces idiomatic output for its ecosystem.
@@ -372,19 +383,21 @@ Adding a new language = implementing `SchemaGenerator` + `DriverGenerator` trait
 ## Project Structure
 
 ```
-sqlcx-rust/
+sqlcx/
 ├── crates/
 │   ├── sqlcx-core/          # Core library
 │   │   └── src/
 │   │       ├── parser/      # SQL parsers (postgres, mysql, sqlite)
 │   │       ├── generator/   # Language plugins
-│   │       │   ├── typescript/  # TypeBox, Zod, Bun SQL, pg
-│   │       │   ├── python/      # Pydantic
-│   │       │   ├── go/          # Structs, database/sql
-│   │       │   └── rust_lang/   # Serde, sqlx
+│   │       │   ├── typescript/  # TypeBox, Zod, Bun SQL, pg, mysql2, better-sqlite3
+│   │       │   ├── python/      # Pydantic, psycopg, asyncpg
+│   │       │   ├── go/          # Structs, database/sql, pgx
+│   │       │   └── rust_lang/   # Serde, sqlx, tokio-postgres
 │   │       ├── ir.rs        # Intermediate representation
 │   │       └── config.rs    # Config parsing
 │   └── sqlcx/               # CLI binary
+├── packages/
+│   └── js/                  # npm binary distribution
 ├── docs/                    # Documentation site (Astro + Starlight)
 └── tests/                   # Integration tests + fixtures
 ```

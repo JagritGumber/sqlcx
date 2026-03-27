@@ -1,0 +1,7 @@
+---
+source: crates/sqlcx-core/src/generator/typescript/better_sqlite3.rs
+expression: content
+---
+import Database from "better-sqlite3";
+
+export type { Database };

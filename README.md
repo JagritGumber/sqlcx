@@ -51,10 +51,10 @@ sql/queries/users.sql ──┤── sqlcx generate ──┬── schema.ts +
 |---|---|---|---|---|
 | **Runtime bundle** | **0 KB** | 1.6 MB | 7.4 KB | **0 KB** |
 | **TypeScript** | ✓ | ✓ | ✓ | Community |
-| **Python** | ✓ (Pydantic + psycopg/asyncpg) | ✓ | — | Community |
+| **Python** | ✓ (Pydantic + psycopg/asyncpg/sqlite3/mysql) | ✓ | — | Community |
 | **Go** | ✓ | — | — | ✓ |
 | **Rust** | ✓ | — | — | — |
-| **Drivers** | **10** (4 TS, 2 Py, 2 Go, 2 Rust) | 1 | 1 | 1 |
+| **Drivers** | **12** (4 TS, 4 Py, 2 Go, 2 Rust) | 1 | 1 | 1 |
 | **Validation** | TypeBox, Zod, Pydantic, Serde | Built-in | Built-in | — |
 | **Multi-language** | ✓ (one SQL, all targets) | — | — | Go only |
 
@@ -305,6 +305,8 @@ $ npx sqlcx generate    # ~20ms
 | TypeScript | `better-sqlite3` | Typed synchronous functions for better-sqlite3 (SQLite) |
 | Python | `psycopg` | Typed functions for psycopg3 (sync Postgres) |
 | Python | `asyncpg` | Typed async functions for asyncpg (async Postgres) |
+| Python | `sqlite3` | Typed functions for Python's built-in sqlite3 |
+| Python | `mysql-connector` | Typed functions for mysql-connector-python (MySQL) |
 | Go | `database-sql` | Typed functions for `database/sql` |
 | Go | `pgx` | Typed functions for jackc/pgx v5 (modern Postgres) |
 | Rust | `sqlx` | Typed async functions for sqlx |

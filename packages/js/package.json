@@ -1,7 +1,7 @@
 {
   "name": "sqlcx-orm",
   "version": "1.0.0",
-  "description": "SQL-first cross-language type-safe code generator",
+  "description": "SQL-first cross-engine, cross-language type-safe code generator",
   "bin": { "sqlcx": "bin/sqlcx" },
   "optionalDependencies": {
     "@sqlcx/darwin-arm64": "1.0.0",

@@ -1,6 +1,8 @@
 pub mod pydantic;
 pub mod psycopg;
 pub mod asyncpg;
+pub mod sqlite3_driver;
+pub mod mysql_connector;
 
 use crate::config::TargetConfig;
 use crate::error::{Result, SqlcxError};
@@ -35,6 +37,8 @@ fn resolve_driver(name: &str) -> Result<Option<Box<dyn DriverGenerator>>> {
         "none" => Ok(None),
         "psycopg" => Ok(Some(Box::new(psycopg::PsycopgGenerator))),
         "asyncpg" => Ok(Some(Box::new(asyncpg::AsyncpgGenerator))),
+        "sqlite3" => Ok(Some(Box::new(sqlite3_driver::Sqlite3Generator))),
+        "mysql-connector" => Ok(Some(Box::new(mysql_connector::MysqlConnectorGenerator))),
         _ => Err(SqlcxError::UnknownDriver(name.to_string())),
     }
 }
@@ -116,6 +120,40 @@ mod tests {
             out: "./src/db".to_string(),
             schema: "pydantic".to_string(),
             driver: "asyncpg".to_string(),
+            overrides: HashMap::new(),
+        };
+        let files = plugin.generate(&ir, &config).unwrap();
+        assert_eq!(files.len(), 3);
+        assert!(files.iter().any(|f| f.path == "models.py"));
+        assert!(files.iter().any(|f| f.path == "client.py"));
+    }
+
+    #[test]
+    fn generates_three_files_with_sqlite3() {
+        let ir = parse_fixture_ir();
+        let plugin = PythonPlugin::new("pydantic", "sqlite3").unwrap();
+        let config = TargetConfig {
+            language: "python".to_string(),
+            out: "./src/db".to_string(),
+            schema: "pydantic".to_string(),
+            driver: "sqlite3".to_string(),
+            overrides: HashMap::new(),
+        };
+        let files = plugin.generate(&ir, &config).unwrap();
+        assert_eq!(files.len(), 3);
+        assert!(files.iter().any(|f| f.path == "models.py"));
+        assert!(files.iter().any(|f| f.path == "client.py"));
+    }
+
+    #[test]
+    fn generates_three_files_with_mysql_connector() {
+        let ir = parse_fixture_ir();
+        let plugin = PythonPlugin::new("pydantic", "mysql-connector").unwrap();
+        let config = TargetConfig {
+            language: "python".to_string(),
+            out: "./src/db".to_string(),
+            schema: "pydantic".to_string(),
+            driver: "mysql-connector".to_string(),
             overrides: HashMap::new(),
         };
         let files = plugin.generate(&ir, &config).unwrap();

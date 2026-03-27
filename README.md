@@ -3,12 +3,12 @@
 </p>
 
 <p align="center">
-  <strong>SQL-first. Every language. Zero runtime.</strong>
+  <strong>Typed SQL for every language, without forcing a new runtime.</strong>
 </p>
 
 <p align="center">
   Write SQL once, generate type-safe code for TypeScript, Python, Go, and Rust.<br/>
-  No ORM. No runtime. No engine. Just your SQL and the types that follow.
+  sqlcx is codegen. It works with your existing drivers and database engines.
 </p>
 
 <p align="center">
@@ -20,7 +20,20 @@
 
 ## What is sqlcx?
 
-sqlcx reads your SQL schema and annotated queries, then generates fully typed client code — with no runtime library shipped to production.
+sqlcx reads your SQL schema and annotated queries, then generates typed client code.
+
+It is not a database.
+It is not an ORM runtime.
+It is not a proxy.
+
+sqlcx is the cross-engine, cross-language codegen layer.
+
+- sqlcx = SQL-first codegen for apps
+- evolvsql = the optional adaptive engine vision behind the scenes
+
+That distinction matters. sqlcx should work with normal databases and drivers even if you never use evolvsql.
+
+If you want the longer-term engine direction, read [docs/evolvsql.md](docs/evolvsql.md).
 
 ```
 sql/schema.sql        ──┐
@@ -38,10 +51,10 @@ sql/queries/users.sql ──┤── sqlcx generate ──┬── schema.ts +
 |---|---|---|---|---|
 | **Runtime bundle** | **0 KB** | 1.6 MB | 7.4 KB | **0 KB** |
 | **TypeScript** | ✓ | ✓ | ✓ | Community |
-| **Python** | ✓ (Pydantic + psycopg/asyncpg) | ✓ | — | Community |
+| **Python** | ✓ (Pydantic + psycopg/asyncpg/sqlite3/mysql) | ✓ | — | Community |
 | **Go** | ✓ | — | — | ✓ |
 | **Rust** | ✓ | — | — | — |
-| **Drivers** | **10** (4 TS, 2 Py, 2 Go, 2 Rust) | 1 | 1 | 1 |
+| **Drivers** | **12** (4 TS, 4 Py, 2 Go, 2 Rust) | 1 | 1 | 1 |
 | **Validation** | TypeBox, Zod, Pydantic, Serde | Built-in | Built-in | — |
 | **Multi-language** | ✓ (one SQL, all targets) | — | — | Go only |
 
@@ -162,9 +175,23 @@ Every version is fully typed from your SQL. No hand-written interfaces. No `any`
 
 Write SQL once. Generate TypeScript, Python, Go, and Rust from the same schema and queries. Perfect for polyglot backends, microservice architectures, or gradual language migrations.
 
-### Zero runtime
+### Zero required runtime
 
-sqlcx generates code at build time. The output imports only your database driver. There is nothing between your query and the wire — no engine, no proxy, no runtime library.
+sqlcx generates code at build time. The output imports only your database driver. There is nothing mandatory between your query and the wire: no proxy, no required runtime library, and no forced engine swap.
+
+If you want adaptive behavior later, that belongs in evolvsql. sqlcx itself stays usable with the database stack you already have.
+
+### sqlcx vs evolvsql
+
+sqlcx is the developer-facing product: typed SQL, codegen, and multi-language clients.
+
+evolvsql is the longer-term adaptive layer: the part that can learn from query patterns, schema evolution, and application behavior over time.
+
+In short:
+
+- use sqlcx when you want typed SQL and codegen today
+- use evolvsql when the adaptive engine vision is ready
+- do not frame either one as "better Postgres"
 
 ### Inline `@enum` annotations
 
@@ -175,7 +202,7 @@ No separate enum objects needed. Define values right where the column is:
 status TEXT NOT NULL DEFAULT 'draft'
 ```
 
-Generates a proper union type (TypeScript), `str(Enum)` class (Python), or string constant (Go/Rust) — not a plain `string`.
+Generates a proper union type (TypeScript), `str(Enum)` class (Python), or string constant (Go/Rust), not a plain `string`.
 
 ### Inline `@json` annotations
 
@@ -188,7 +215,7 @@ preferences JSONB
 
 Generates a fully typed schema. Supports nested objects, arrays (`string[]`), and nullable (`string?`).
 
-### `@param` — named parameters
+### `@param` named parameters
 
 Give your query parameters descriptive names:
 
@@ -212,7 +239,7 @@ LIMIT $2;
 
 ### Select / Insert type separation
 
-Every table gets two types — one for reading, one for writing:
+Every table gets two types: one for reading, one for writing.
 
 ```python
 # Python (Pydantic)
@@ -232,14 +259,14 @@ class InsertUsers(BaseModel):      # Defaults are optional
 
 ### Partial column selection
 
-Only select the columns you need — the generated type matches exactly:
+Only select the columns you need. The generated type matches exactly.
 
 ```sql
 -- name: ListUserEmails :many
 SELECT id, email FROM users;
 ```
 
-Generates `ListUserEmailsRow` with only `{ id, email }` — not the full table type.
+Generates `ListUserEmailsRow` with only `{ id, email }`, not the full table type.
 
 ### Caching
 
@@ -278,6 +305,8 @@ $ npx sqlcx generate    # ~20ms
 | TypeScript | `better-sqlite3` | Typed synchronous functions for better-sqlite3 (SQLite) |
 | Python | `psycopg` | Typed functions for psycopg3 (sync Postgres) |
 | Python | `asyncpg` | Typed async functions for asyncpg (async Postgres) |
+| Python | `sqlite3` | Typed functions for Python's built-in sqlite3 |
+| Python | `mysql-connector` | Typed functions for mysql-connector-python (MySQL) |
 | Go | `database-sql` | Typed functions for `database/sql` |
 | Go | `pgx` | Typed functions for jackc/pgx v5 (modern Postgres) |
 | Rust | `sqlx` | Typed async functions for sqlx |
@@ -306,7 +335,7 @@ npx sqlcx schema      # Emit JSON Schema for config validation (coming soon)
 
 ## Configuration
 
-**`sqlcx.toml`** — minimal:
+**`sqlcx.toml`** minimal:
 
 ```toml
 sql    = "./sql"
@@ -319,7 +348,7 @@ schema   = "typebox"
 driver   = "bun-sql"
 ```
 
-**Multi-target** — generate all languages at once:
+**Multi-target** generate all languages at once:
 
 ```toml
 sql    = "./sql"

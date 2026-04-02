@@ -1,0 +1,54 @@
+---
+title: Installation
+description: Install sqlcx in under 30 seconds.
+---
+
+import { Tabs, TabItem, Steps } from '@astrojs/starlight/components';
+
+## Install
+
+<Tabs>
+  <TabItem label="npm">
+    ```bash
+    npm install sqlcx-orm
+    ```
+  </TabItem>
+  <TabItem label="cargo">
+    ```bash
+    cargo install sqlcx
+    ```
+  </TabItem>
+</Tabs>
+
+That's it. No daemon, no engine binary, no background process. sqlcx is a build tool — it runs once, generates code, and gets out of the way.
+
+---
+
+## Verify
+
+```bash
+npx sqlcx --version
+```
+
+You should see the version number. If you installed via cargo:
+
+```bash
+sqlcx --version
+```
+
+---
+
+## What gets installed?
+
+| Package | What it is | Size |
+|---------|-----------|------|
+| `sqlcx-orm` (npm) | CLI + codegen engine | ~2 MB |
+| `sqlcx` (cargo) | Native binary | ~3 MB |
+
+No runtime libraries. No query engines. The generated code imports only your database driver — sqlcx itself is never a production dependency.
+
+---
+
+## Next
+
+→ [Quick Start](/getting-started/quick-start) — generate your first typed query in under five minutes

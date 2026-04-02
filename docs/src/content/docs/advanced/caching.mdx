@@ -1,0 +1,69 @@
+---
+title: Caching
+description: sqlcx skips re-parsing when your SQL hasn't changed.
+---
+
+sqlcx caches its parse results. If your SQL files haven't changed, the next `generate` run skips parsing entirely and goes straight to code output.
+
+---
+
+## How to use it
+
+You don't. It's automatic. Just run `sqlcx generate` — caching happens behind the scenes.
+
+```bash
+# First run: parses all SQL files (~200ms)
+$ npx sqlcx generate
+
+# Second run: nothing changed, uses cache (~20ms)
+$ npx sqlcx generate
+```
+
+---
+
+## Where the cache lives
+
+```
+.sqlcx/ir.json
+```
+
+Add `.sqlcx/` to your `.gitignore` — it's a local build artifact, like `node_modules` or `target/`.
+
+```gitignore
+# .gitignore
+.sqlcx/
+```
+
+---
+
+## When is the cache invalidated?
+
+Any time a `.sql` file in your project changes — added, modified, or deleted. sqlcx hashes all SQL file contents and compares against the cached hash. Different hash = re-parse.
+
+---
+
+## Caching in CI
+
+Cache the `.sqlcx/` directory to speed up CI builds:
+
+```yaml
+# GitHub Actions
+- uses: actions/cache@v4
+  with:
+    path: .sqlcx
+    key: sqlcx-${{ hashFiles('sql/**/*.sql') }}
+```
+
+On a cache hit, the parse step is skipped entirely.
+
+---
+
+## Clearing the cache
+
+If something seems wrong, nuke it:
+
+```bash
+rm -rf .sqlcx
+```
+
+The next `generate` run will parse from scratch and rebuild the cache.

@@ -1,0 +1,22 @@
+---
+title: sqlcx
+description: SQL-first. Every language. Zero runtime.
+template: splash
+hero:
+  tagline: ' '
+  actions: []
+---
+
+import Hero from '../../components/Hero.astro';
+import CodeComparison from '../../components/CodeComparison.astro';
+import RuntimeBars from '../../components/RuntimeBars.astro';
+import LanguageCards from '../../components/LanguageCards.astro';
+import GetStarted from '../../components/GetStarted.astro';
+import FooterCTA from '../../components/FooterCTA.astro';
+
+<Hero />
+<CodeComparison />
+<RuntimeBars />
+<LanguageCards />
+<GetStarted />
+<FooterCTA />

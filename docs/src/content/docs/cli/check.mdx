@@ -1,0 +1,55 @@
+---
+title: check
+description: Validate your SQL and config without generating output.
+---
+
+```bash
+npx sqlcx check
+```
+
+Does everything `generate` does — reads config, finds SQL files, parses them — but **doesn't write any output**. Use it to catch errors before committing.
+
+---
+
+## When to use it
+
+- **In CI** — fail the build if SQL is broken
+- **Before committing** — quick validation without regenerating files
+- **Debugging** — see if sqlcx can parse your SQL without side effects
+
+```
+$ npx sqlcx check
+Check passed — 3 tables, 8 queries, 1 enum
+```
+
+If something's wrong:
+
+```
+$ npx sqlcx check
+error: unknown type "uuid" at sql/schema.sql:12
+```
+
+Exit code is `0` on success, non-zero on failure.
+
+---
+
+## CI examples
+
+**GitHub Actions:**
+```yaml
+- name: Validate SQL
+  run: npx sqlcx check
+```
+
+**Makefile:**
+```makefile
+lint:
+	npx sqlcx check
+```
+
+---
+
+## See also
+
+- [generate](/cli/generate) — same pipeline, but writes output files
+- [Configuration](/getting-started/configuration) — `sqlcx.toml` reference

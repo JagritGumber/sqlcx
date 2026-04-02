@@ -1,0 +1,81 @@
+---
+const sqlCode = `<span class="text-lime">SELECT</span> id, email,
+       name, created_at
+<span class="text-lime">FROM</span> users
+<span class="text-lime">WHERE</span> team_id = ?
+<span class="text-lime">LIMIT</span> 10;`;
+
+const tsSnippet = `interface User { id: string; email: string; }`;
+const goSnippet = `type User struct { ID string; Email string; }`;
+const rustSnippet = `#[derive(Debug)] struct User { id: String }`;
+---
+
+<section class="max-w-7xl mx-auto px-8 mb-16">
+  <div class="grid lg:grid-cols-2 gap-12 items-center">
+    <div class="space-y-6">
+      <!-- Version badge -->
+      <div class="inline-flex items-center gap-2 px-3 py-1 rounded-sm bg-surface-high border border-outline/15">
+        <span class="w-2 h-2 rounded-full bg-lime animate-pulse"></span>
+        <span class="font-label text-xs uppercase tracking-[0.2em] text-muted">v0.1.0 — First Release</span>
+      </div>
+
+      <!-- Headline -->
+      <h1 class="font-headline font-extrabold text-5xl md:text-7xl tracking-tighter leading-[0.9] text-white">
+        SQL-first.<br/>Every language.<br/><span class="text-lime text-glow">Zero runtime.</span>
+      </h1>
+
+      <!-- Subtitle -->
+      <p class="text-muted text-lg md:text-xl max-w-xl leading-relaxed">
+        Write SQL once, generate type-safe code for TypeScript, Go, and Rust. No overhead, no abstraction leaks, just raw performance.
+      </p>
+
+      <!-- Install command -->
+      <div class="flex flex-wrap gap-4 pt-2">
+        <div class="bg-surface-lowest border border-outline/30 rounded-md p-3 flex items-center gap-4 font-label">
+          <span class="text-lime">$</span>
+          <span class="text-white text-sm">npm install sqlcx-orm</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Code visualization -->
+    <div class="relative group">
+      <div class="absolute -inset-4 bg-lime/5 blur-3xl rounded-full group-hover:bg-lime/10 transition-all"></div>
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4 relative">
+        <!-- Input SQL -->
+        <div class="glass-panel rounded-xl p-6 overflow-hidden">
+          <div class="flex items-center justify-between mb-4">
+            <span class="font-label text-xs uppercase tracking-widest text-muted">query.sql</span>
+            <span class="text-[10px] text-lime/60">INPUT</span>
+          </div>
+          <pre class="font-mono text-sm leading-relaxed text-tertiary m-0"><code set:html={sqlCode} /></pre>
+        </div>
+
+        <!-- Output languages -->
+        <div class="space-y-3">
+          <div class="glass-panel rounded-xl p-4 border-l-2 border-lime">
+            <div class="flex items-center justify-between mb-2">
+              <span class="font-label text-xs font-bold text-white">TypeScript</span>
+              <span class="text-lime text-xs">✓</span>
+            </div>
+            <code class="text-[11px] text-muted block font-mono" set:html={tsSnippet} />
+          </div>
+          <div class="glass-panel rounded-xl p-4 opacity-70">
+            <div class="flex items-center justify-between mb-2">
+              <span class="font-label text-xs font-bold text-white">Go</span>
+              <span class="text-lime text-xs">✓</span>
+            </div>
+            <code class="text-[11px] text-muted block font-mono" set:html={goSnippet} />
+          </div>
+          <div class="glass-panel rounded-xl p-4 opacity-50">
+            <div class="flex items-center justify-between mb-2">
+              <span class="font-label text-xs font-bold text-white">Rust</span>
+              <span class="text-lime text-xs">✓</span>
+            </div>
+            <code class="text-[11px] text-muted block font-mono" set:html={rustSnippet} />
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>

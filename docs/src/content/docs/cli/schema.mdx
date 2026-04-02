@@ -1,0 +1,82 @@
+---
+title: schema
+description: Emit the JSON Schema for sqlcx.toml config validation and editor autocomplete.
+---
+
+## Usage
+
+```bash
+sqlcx schema
+```
+
+Prints the JSON Schema for `sqlcx.toml` to stdout. Pipe it to a file to enable editor autocomplete and inline validation in VS Code, JetBrains IDEs, and any other editor with JSON Schema support.
+
+---
+
+## Intended behavior
+
+When implemented, `sqlcx schema` will output a JSON Schema document describing all valid `sqlcx.toml` fields, types, and constraints:
+
+```bash
+# Save for editor integration
+sqlcx schema > sqlcx-schema.json
+```
+
+Example output (truncated):
+
+```json
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "sqlcx configuration",
+  "type": "object",
+  "properties": {
+    "sql": {
+      "type": "string",
+      "description": "Path to the SQL directory"
+    },
+    "parser": {
+      "type": "string",
+      "enum": ["postgres"],
+      "description": "SQL dialect parser"
+    },
+    "targets": {
+      "type": "array",
+      "items": { "$ref": "#/definitions/Target" }
+    }
+  }
+}
+```
+
+### Editor integration
+
+Point your editor's JSON Schema association to the generated file. In VS Code, add to `.vscode/settings.json`:
+
+```json
+{
+  "yaml.schemas": {},
+  "evenBetterToml.schema.associations": {
+    "sqlcx.toml": "./sqlcx-schema.json"
+  }
+}
+```
+
+---
+
+## Current status
+
+:::caution[Not yet implemented]
+`sqlcx schema` is planned and will be available in a future release. Running it today exits with an error:
+
+```
+error: schema command not yet implemented
+```
+:::
+
+Until this command ships, refer to the [Configuration](/getting-started/configuration) reference page for all supported `sqlcx.toml` fields.
+
+---
+
+## See also
+
+- [Configuration](/getting-started/configuration) — full `sqlcx.toml` reference
+- [generate](/cli/generate) — run the code generation pipeline

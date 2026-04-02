@@ -1,0 +1,78 @@
+---
+title: PostgreSQL
+description: Full PostgreSQL support — enums, arrays, JSONB, UUID, and positional parameters.
+---
+
+PostgreSQL is sqlcx's most feature-complete target. Custom enums, array columns, JSONB, UUID — it all works out of the box.
+
+```toml
+parser = "postgres"
+```
+
+---
+
+## What's supported
+
+| Feature | Example |
+|---------|---------|
+| Custom ENUMs | `CREATE TYPE status AS ENUM ('active', 'banned')` |
+| Array columns | `TEXT[]`, `INTEGER[]` |
+| Auto-increment | `SERIAL`, `BIGSERIAL` |
+| Default values | `DEFAULT 'active'`, `DEFAULT NOW()` |
+| NOT NULL | Full constraint parsing |
+| Positional params | `$1`, `$2`, `$3` |
+| UUID | Maps to `str`/`string` by default |
+| JSONB / JSON | Maps to `Any`/`json.RawMessage`/`serde_json::Value` |
+| BYTEA | Maps to `bytes`/`[]byte`/`Vec<u8>` |
+
+---
+
+## Type mapping
+
+These are the IR categories sqlcx assigns to each PostgreSQL type. Each target language maps these to its own native types (see the language-specific docs).
+
+| SQL Type | IR Category |
+|----------|-------------|
+| `INTEGER`, `INT`, `SERIAL`, `SMALLINT`, `BIGINT`, `BIGSERIAL` | number |
+| `REAL`, `DOUBLE PRECISION`, `NUMERIC`, `DECIMAL`, `FLOAT` | number |
+| `TEXT`, `VARCHAR`, `CHAR` | string |
+| `UUID` | uuid |
+| `BOOLEAN` | boolean |
+| `TIMESTAMP`, `TIMESTAMPTZ`, `DATE`, `TIME` | date |
+| `JSONB`, `JSON` | json |
+| `BYTEA` | binary |
+| `TEXT[]`, `INTEGER[]`, etc. | array of element type |
+| `CREATE TYPE ... AS ENUM` | enum |
+
+---
+
+## Example
+
+```sql
+CREATE TYPE user_status AS ENUM ('active', 'inactive', 'banned');
+
+CREATE TABLE users (
+  id         SERIAL PRIMARY KEY,
+  email      TEXT NOT NULL UNIQUE,
+  status     user_status NOT NULL DEFAULT 'active',
+  tags       TEXT[],
+  metadata   JSONB,
+  created_at TIMESTAMP NOT NULL DEFAULT now()
+);
+```
+
+sqlcx generates a `UserStatus` enum with values `active`, `inactive`, `banned`, and a `Users` model with all columns mapped to the correct types in your target language.
+
+---
+
+## Notes
+
+**ENUMs** — Declared separately with `CREATE TYPE ... AS ENUM (...)`. sqlcx resolves column references to their enum type automatically. Values are preserved exactly as written in SQL.
+
+**Arrays** — `TEXT[]` generates `list[str]` in Python, `string[]` in TypeScript, `[]string` in Go, `Vec<String>` in Rust. The element type is mapped recursively.
+
+**UUID** — Maps to `str`/`string` by default. If your target language has a dedicated UUID type, use an override: `uuid = "UUID"` in your `[overrides]` section.
+
+**JSONB** — Maps to an untyped value (`Any`, `unknown`, `json.RawMessage`, `serde_json::Value`). For stronger typing, use the `@json` annotation on your query to define the shape.
+
+**Parameters** — PostgreSQL uses `$1`, `$2`, `$3` positional parameters. sqlcx parses these and generates typed parameter lists in the correct order. Use `@param` annotations to give them names.

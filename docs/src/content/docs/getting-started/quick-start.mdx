@@ -1,0 +1,174 @@
+---
+title: Quick Start
+description: From zero to typed queries in five minutes.
+---
+
+import { Steps, Tabs, TabItem } from '@astrojs/starlight/components';
+
+You'll write a SQL schema, add a query, run one command, and get fully typed code back. Five minutes.
+
+<Steps>
+
+1. **Set up your project**
+
+   ```bash
+   mkdir myapp && cd myapp
+   npm init -y
+   npm install sqlcx-orm
+   mkdir -p sql/queries
+   ```
+
+2. **Define your schema** — `sql/schema.sql`
+
+   This is your source of truth. Everything sqlcx generates comes from here.
+
+   ```sql
+   CREATE TYPE user_status AS ENUM ('active', 'inactive', 'banned');
+
+   CREATE TABLE users (
+     id         SERIAL      PRIMARY KEY,
+     name       TEXT        NOT NULL,
+     email      TEXT        NOT NULL UNIQUE,
+     status     user_status NOT NULL DEFAULT 'active',
+     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+   );
+   ```
+
+3. **Write your queries** — `sql/queries/users.sql`
+
+   Annotate each query with a name and return type. That's all sqlcx needs.
+
+   ```sql
+   -- name: GetUser :one
+   SELECT id, name, email, status, created_at
+   FROM users
+   WHERE id = $1;
+
+   -- name: ListUsers :many
+   SELECT id, name, email, status, created_at
+   FROM users
+   ORDER BY created_at DESC;
+
+   -- name: CreateUser :exec
+   INSERT INTO users (name, email)
+   VALUES ($1, $2);
+   ```
+
+   `:one` returns a single row (or null). `:many` returns an array. `:exec` returns nothing.
+
+4. **Configure** — `sqlcx.toml`
+
+   Tell sqlcx what dialect you're using and where to write the output.
+
+   <Tabs>
+     <TabItem label="TypeScript">
+       ```toml
+       sql    = "./sql"
+       parser = "postgres"
+
+       [[targets]]
+       language = "typescript"
+       out      = "src/generated"
+       schema   = "typebox"
+       driver   = "bun-sql"
+       ```
+     </TabItem>
+     <TabItem label="Python">
+       ```toml
+       sql    = "./sql"
+       parser = "postgres"
+
+       [[targets]]
+       language = "python"
+       out      = "src/generated"
+       schema   = "pydantic"
+       driver   = "none"
+       ```
+     </TabItem>
+     <TabItem label="Go">
+       ```toml
+       sql    = "./sql"
+       parser = "postgres"
+
+       [[targets]]
+       language = "go"
+       out      = "db"
+       schema   = "structs"
+       driver   = "database-sql"
+       ```
+     </TabItem>
+     <TabItem label="Rust">
+       ```toml
+       sql    = "./sql"
+       parser = "postgres"
+
+       [[targets]]
+       language = "rust"
+       out      = "src/db"
+       schema   = "serde"
+       driver   = "sqlx"
+       ```
+     </TabItem>
+   </Tabs>
+
+5. **Generate**
+
+   ```bash
+   npx sqlcx generate
+   ```
+
+   Done. Check your output directory — typed code is waiting.
+
+6. **Use it**
+
+   <Tabs>
+     <TabItem label="TypeScript">
+       ```typescript
+       import { sql } from 'bun';
+       import { getUser, listUsers, createUser } from './generated/users';
+
+       await createUser(sql, { name: 'Alice', email: 'alice@example.com' });
+
+       const user = await getUser(sql, { id: 1 });
+       console.log(user.name, user.status);
+       //          ^? string   ^? "active" | "inactive" | "banned"
+       ```
+     </TabItem>
+     <TabItem label="Python">
+       ```python
+       from generated.models import SelectUsers, UserStatus
+
+       user = SelectUsers(
+           id=1, name="Alice", email="alice@example.com",
+           status=UserStatus.ACTIVE, created_at=datetime.now()
+       )
+       print(user.name)  # fully typed, validated by Pydantic
+       ```
+     </TabItem>
+   </Tabs>
+
+   Every parameter and return value is typed from your SQL. No `any`. No type assertions. No guessing.
+
+</Steps>
+
+---
+
+## What was generated?
+
+```
+src/generated/
+├── schema.ts         # TypeBox/Zod validators for every table
+├── client.ts         # Database client wrapper
+└── users.queries.ts  # Typed functions for each named query
+```
+
+The generated code imports only your database driver. There is no sqlcx runtime dependency. You can read every line.
+
+---
+
+## What's next?
+
+- [Configuration](/getting-started/configuration) — full `sqlcx.toml` reference
+- [TypeBox](/typescript/typebox) — TypeScript schema validation
+- [Pydantic](/python/pydantic) — Python model generation
+- [PostgreSQL](/databases/postgresql) — database-specific features

@@ -1,0 +1,172 @@
+---
+title: Configuration
+description: Full reference for sqlcx.toml — every field, every option.
+---
+
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+sqlcx reads its config from `sqlcx.toml` (preferred) or `sqlcx.json` in your project root.
+
+---
+
+## Minimal config
+
+The smallest useful config — one language, one target:
+
+```toml
+sql    = "./sql"
+parser = "postgres"
+
+[[targets]]
+language = "typescript"
+out      = "src/generated"
+schema   = "typebox"
+driver   = "bun-sql"
+```
+
+That's it. Run `npx sqlcx generate` and you're done.
+
+---
+
+## Multi-target config
+
+Generate TypeScript, Python, and Go from the same SQL:
+
+```toml
+sql    = "./sql"
+parser = "postgres"
+
+[[targets]]
+language = "typescript"
+out      = "clients/ts/generated"
+schema   = "typebox"
+driver   = "bun-sql"
+
+[[targets]]
+language = "python"
+out      = "clients/py/generated"
+schema   = "pydantic"
+driver   = "none"
+
+[[targets]]
+language = "go"
+out      = "clients/go/generated"
+schema   = "structs"
+driver   = "database-sql"
+```
+
+One `sqlcx generate` command writes all three. Same SQL, same types, three languages.
+
+---
+
+## Top-level fields
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `sql` | `string` | Yes | Path to directory containing `.sql` files (schema + queries) |
+| `parser` | `string` | Yes | SQL dialect: `"postgres"`, `"mysql"`, or `"sqlite"` |
+| `targets` | `Target[]` | Yes | One or more output targets |
+| `overrides` | `map` | No | Global type overrides applied to all targets |
+
+---
+
+## Target fields
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `language` | `string` | Yes | Output language (see table below) |
+| `out` | `string` | Yes | Directory to write generated files into |
+| `schema` | `string` | Yes | Schema generator to use |
+| `driver` | `string` | Yes | Database driver generator |
+| `overrides` | `map` | No | Per-target type overrides (merged with global) |
+
+---
+
+## Available generators
+
+| Language | Schema options | Driver options |
+|----------|---------------|----------------|
+| `typescript` | `typebox`, `zod`, `zod/v3` | `bun-sql`, `pg` |
+| `python` | `pydantic` | `none` |
+| `go` | `structs` | `database-sql` |
+| `rust` | `serde` | `sqlx` |
+
+---
+
+## Type overrides
+
+Override how sqlcx maps a SQL type to a target language type. Useful for `UUID`, custom domains, or `JSONB` columns.
+
+**Global overrides** — apply to all targets:
+
+```toml
+[overrides]
+uuid = "string"
+```
+
+**Per-target overrides** — apply to one target only:
+
+```toml
+[[targets]]
+language = "typescript"
+out      = "src/generated"
+schema   = "typebox"
+driver   = "bun-sql"
+
+[targets.overrides]
+uuid = "string"
+```
+
+Per-target overrides merge with (and take precedence over) global overrides.
+
+---
+
+## File structure
+
+sqlcx expects this directory layout:
+
+```
+my-project/
+├── sqlcx.toml
+└── sql/
+    ├── schema.sql          # CREATE TABLE, CREATE TYPE
+    └── queries/
+        ├── users.sql       # -- name: GetUser :one
+        └── posts.sql       # -- name: ListPosts :many
+```
+
+**Schema files** — any `.sql` file without `-- name:` annotations. Contains `CREATE TABLE`, `CREATE TYPE`, etc.
+
+**Query files** — any `.sql` file with `-- name:` annotations, or any file inside a `queries/` subdirectory.
+
+---
+
+## JSON alternative
+
+Prefer JSON? Same structure, different syntax:
+
+```json
+{
+  "sql": "./sql",
+  "parser": "postgres",
+  "targets": [
+    {
+      "language": "typescript",
+      "out": "src/generated",
+      "schema": "typebox",
+      "driver": "bun-sql"
+    }
+  ]
+}
+```
+
+Save as `sqlcx.json` in your project root.
+
+---
+
+## Next
+
+- [Quick Start](/getting-started/quick-start) — see a full working example
+- [TypeBox](/typescript/typebox) — TypeScript validation with TypeBox
+- [Pydantic](/python/pydantic) — Python model generation
+- [PostgreSQL](/databases/postgresql) — database-specific type mapping

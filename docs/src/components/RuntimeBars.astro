@@ -1,0 +1,41 @@
+---
+---
+
+<section class="bg-surface-low py-20 overflow-hidden">
+  <div class="max-w-7xl mx-auto px-8">
+    <div class="text-center mb-12">
+      <h2 class="font-headline font-bold text-3xl text-white mb-3">Unmatched Lean Performance</h2>
+      <p class="font-label text-muted uppercase tracking-widest text-xs">Runtime footprint comparison (KB)</p>
+    </div>
+
+    <div class="grid grid-cols-3 gap-8 items-end max-w-3xl mx-auto h-[300px]">
+      <!-- Prisma -->
+      <div class="flex flex-col items-center gap-3 h-full justify-end group">
+        <div class="w-full bg-surface-mid h-[85%] rounded-t-lg relative transition-all group-hover:bg-surface-high">
+          <span class="absolute -top-7 left-1/2 -translate-x-1/2 font-label text-xs text-muted">~1.6 MB</span>
+        </div>
+        <span class="font-label text-xs text-muted">Prisma</span>
+      </div>
+
+      <!-- Drizzle -->
+      <div class="flex flex-col items-center gap-3 h-full justify-end group">
+        <div class="w-full bg-surface-mid h-[22%] rounded-t-lg relative transition-all group-hover:bg-surface-high">
+          <span class="absolute -top-7 left-1/2 -translate-x-1/2 font-label text-xs text-muted">~7.4 KB</span>
+        </div>
+        <span class="font-label text-xs text-muted">Drizzle</span>
+      </div>
+
+      <!-- sqlcx -->
+      <div class="flex flex-col items-center gap-3 h-full justify-end group">
+        <div class="w-full primary-gradient h-[2%] rounded-t-lg relative shadow-[0_0_25px_rgba(213,251,42,0.4)]">
+          <span class="absolute -top-7 left-1/2 -translate-x-1/2 font-headline font-bold text-xs text-lime">0 KB</span>
+        </div>
+        <span class="font-label text-xs text-white font-bold">sqlcx</span>
+      </div>
+    </div>
+
+    <div class="mt-12 text-center max-w-xl mx-auto">
+      <p class="text-muted text-sm italic">"By moving all logic to the build step, sqlcx eliminates the middleman. Your production binary only contains your SQL and the driver connection."</p>
+    </div>
+  </div>
+</section>

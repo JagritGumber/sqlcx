@@ -1,0 +1,101 @@
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;700;800&family=Space+Grotesk:wght@400;500;700&family=Inter:wght@400;500&display=swap');
+
+@layer base, starlight, theme, components, utilities;
+
+@import '@astrojs/starlight-tailwind';
+@import 'tailwindcss/theme.css' layer(theme);
+@import 'tailwindcss/utilities.css' layer(utilities);
+
+/* ── Tailwind v4 theme tokens ── */
+@theme {
+  /* Starlight accent ramp (docs pages) */
+  --color-accent-50: #f6f8e8;
+  --color-accent-100: #edf1d0;
+  --color-accent-200: #e8f0a0;
+  --color-accent-300: #d4e070;
+  --color-accent-400: #d5fb2a;
+  --color-accent-500: #a0b840;
+  --color-accent-600: #7a8a20;
+  --color-accent-700: #556010;
+  --color-accent-800: #3d4510;
+  --color-accent-900: #2a3000;
+  --color-accent-950: #1d2200;
+
+  /* Grays */
+  --color-gray-50: #fafafa;
+  --color-gray-100: #f5f5f5;
+  --color-gray-200: #e5e5e5;
+  --color-gray-300: #b0b0b0;
+  --color-gray-400: #888888;
+  --color-gray-500: #666666;
+  --color-gray-600: #444444;
+  --color-gray-700: #333333;
+  --color-gray-800: #1a1a1a;
+  --color-gray-900: #111111;
+  --color-gray-950: #0a0a0a;
+
+  /* Design system — surface hierarchy */
+  --color-surface: #0e0e0e;
+  --color-surface-low: #131313;
+  --color-surface-mid: #1a1919;
+  --color-surface-high: #201f1f;
+  --color-surface-highest: #262626;
+  --color-surface-lowest: #000000;
+
+  /* Primary */
+  --color-lime: #d5fb2a;
+  --color-lime-dim: #c1e602;
+  --color-on-primary: #4d5d00;
+
+  /* Text */
+  --color-muted: #adaaaa;
+  --color-outline: #494847;
+  --color-error: #ff7351;
+  --color-tertiary: #eecd34;
+
+  /* Fonts */
+  --font-headline: 'Plus Jakarta Sans', system-ui, sans-serif;
+  --font-sans: 'Inter', system-ui, sans-serif;
+  --font-label: 'Space Grotesk', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+}
+
+/* ── Starlight CSS variable overrides (docs pages) ── */
+:root[data-theme='dark'] {
+  --sl-color-accent-low: #2a3000;
+  --sl-color-accent: #d5fb2a;
+  --sl-color-accent-high: #e8f0a0;
+  --sl-color-text-accent: #d5fb2a;
+  --sl-color-bg: #0e0e0e;
+  --sl-color-bg-sidebar: #131313;
+  --sl-color-bg-nav: #0e0e0e;
+  --sl-color-hairline-light: #1a1a1a;
+  --sl-color-hairline-shade: #2a2a2a;
+}
+
+:root[data-theme='light'] {
+  --sl-color-accent-low: #f0f4d4;
+  --sl-color-accent: #7a8a20;
+  --sl-color-accent-high: #3d4510;
+  --sl-color-text-accent: #5a6a10;
+}
+
+/* ── Structural overrides (Starlight docs pages) ── */
+.site-title img {
+  height: 2rem;
+}
+
+/* ── Landing page utilities ── */
+.glass-panel {
+  background: rgba(38, 38, 38, 0.4);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(73, 72, 71, 0.15);
+}
+
+.primary-gradient {
+  background: linear-gradient(135deg, #d5fb2a 0%, #c1e602 100%);
+}
+
+.text-glow {
+  text-shadow: 0 0 15px rgba(213, 251, 42, 0.3);
+}

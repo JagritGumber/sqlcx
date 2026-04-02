@@ -1,0 +1,44 @@
+---
+---
+
+<section class="max-w-7xl mx-auto px-8 py-20">
+  <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+    <!-- Large feature: Static Analysis -->
+    <div class="md:col-span-2 glass-panel rounded-xl p-8 flex flex-col justify-between group overflow-hidden relative">
+      <div class="absolute top-0 right-0 w-48 h-48 bg-lime/5 blur-[80px] -mr-24 -mt-24"></div>
+      <div>
+        <svg class="w-8 h-8 text-lime mb-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+        <h3 class="font-headline font-extrabold text-3xl text-white mb-3">Static Analysis Engine</h3>
+        <p class="text-muted text-base max-w-md">Our compiler parses your SQL and validates it against your live schema at build time. Catch errors before they hit production.</p>
+      </div>
+      <div class="mt-8 bg-surface-lowest/50 p-3 rounded-md font-mono text-xs border border-outline/10">
+        <span class="text-error">ERROR:</span> <span class="text-muted">Column "usr_id" does not exist on table "users". Did you mean "user_id"?</span>
+      </div>
+    </div>
+
+    <!-- Small feature: Polyglot -->
+    <div class="bg-surface-mid rounded-xl p-6 flex flex-col justify-between border border-outline/5">
+      <svg class="w-6 h-6 text-muted mb-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18z"/><path d="M3.6 9h16.8M3.6 15h16.8"/><path d="M12 3a15 15 0 0 1 4 9 15 15 0 0 1-4 9 15 15 0 0 1-4-9 15 15 0 0 1 4-9z"/></svg>
+      <h4 class="font-headline font-bold text-lg text-white mb-1">Polyglot Generation</h4>
+      <p class="text-muted text-xs">One source of truth, infinite targets. Keep your backend stack consistent across microservices.</p>
+    </div>
+
+    <!-- Small feature: Type-Safe -->
+    <div class="bg-surface-mid rounded-xl p-6 flex flex-col justify-between border border-outline/5">
+      <svg class="w-6 h-6 text-muted mb-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg>
+      <h4 class="font-headline font-bold text-lg text-white mb-1">Type-Safe Queries</h4>
+      <p class="text-muted text-xs">Every generated function has full type signatures. No <code class="text-white/70">any</code>, no runtime casts, no surprises.</p>
+    </div>
+
+    <!-- Big CTA -->
+    <div class="md:col-span-2 primary-gradient p-8 rounded-xl flex items-center justify-between group cursor-pointer overflow-hidden relative">
+      <a href="/getting-started/quick-start/" class="absolute inset-0 z-10" aria-label="Get Started"></a>
+      <div class="absolute inset-0 bg-black/0 group-hover:bg-black/5 transition-colors"></div>
+      <div>
+        <h3 class="font-headline font-extrabold text-3xl text-on-primary mb-1">Ready to accelerate?</h3>
+        <p class="font-medium text-sm text-on-primary/80">Start generating type-safe code from your SQL today.</p>
+      </div>
+      <svg class="w-12 h-12 text-on-primary group-hover:translate-x-2 transition-transform" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+    </div>
+  </div>
+</section>

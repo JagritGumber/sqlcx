@@ -1,0 +1,74 @@
+---
+title: sqlcx vs Prisma vs Drizzle vs sqlc
+description: How sqlcx compares to other database tooling in the ecosystem.
+---
+
+Every database tool makes a different bet about what "the truth" is. That choice shapes everything — bundle size, language support, runtime behavior, and how much the tool gets in your way.
+
+---
+
+## At a glance
+
+| | sqlcx | Prisma | Drizzle | sqlc |
+|---|---|---|---|---|
+| **Approach** | SQL-first codegen | Schema-first ORM | TS query builder | SQL-first codegen |
+| **Runtime bundle** | **0 KB** | 1.6 MB | 7.4 KB | **0 KB** |
+| **TypeScript** | ✓ | ✓ | ✓ | Community |
+| **Go** | ✓ | — | — | ✓ |
+| **Rust** | ✓ | — | — | — |
+| **Python** | ✓ (Pydantic) | ✓ | — | Community |
+| **PostgreSQL** | ✓ | ✓ | ✓ | ✓ |
+| **MySQL** | ✓ | ✓ | ✓ | ✓ |
+| **SQLite** | ✓ | ✓ | ✓ | ✓ |
+| **Schema validation** | TypeBox, Zod, Pydantic, Serde | Built-in | Built-in | — |
+| **Multi-language** | ✓ | — | — | Go only |
+
+---
+
+## The four philosophies
+
+### sqlcx — SQL is truth
+
+You write SQL. sqlcx reads it, validates it against your schema, and generates typed client code in TypeScript, Go, Rust, or Python. At runtime, the generated code calls your driver directly. There is no engine, no proxy, no runtime library.
+
+**Trade-off:** You write SQL by hand. No query builder, no auto-complete for joins. If that sounds like a feature, sqlcx is for you.
+
+**Best for:** Teams that want full control over their SQL, zero runtime overhead, and typed clients across multiple languages.
+
+---
+
+### Prisma — Schema DSL is truth
+
+Prisma's `.prisma` schema file defines your models, relations, and connection. Everything — migrations, the query API, the types — derives from it. The developer experience is polished.
+
+**Trade-off:** A 1.6 MB query engine binary runs as a proxy between your app and the database. Every query passes through it. Cold starts pay for it. And the SQL it generates is hidden behind debug flags.
+
+**Best for:** Teams that want batteries-included DX and don't mind the engine.
+
+---
+
+### Drizzle — TypeScript is truth
+
+Define your schema in TypeScript, build queries with a chainable API that mirrors SQL. No codegen step. Types come from the TypeScript definitions.
+
+**Trade-off:** Your schema lives in TypeScript, not SQL. A 7.4 KB runtime ships with your app. And the deeper the generics, the slower your IDE.
+
+**Best for:** TypeScript-only projects that want a lightweight query builder without codegen.
+
+---
+
+### sqlc — SQL is truth, Go edition
+
+The original SQL-first codegen tool. Write SQL, annotate queries, get typed Go code. Mature, battle-tested, widely used.
+
+**Trade-off:** First-class support for Go only. TypeScript and Python exist as community plugins, not core targets. No schema validation integration.
+
+**Best for:** Go-first teams that want typed database access without an ORM.
+
+---
+
+## So why sqlcx?
+
+sqlcx is for teams that want the sqlc model — SQL-first, zero runtime, typed output — but need it to work across more than one language.
+
+If you're writing TypeScript today and want to ship the same queries to a Go microservice or a Python ML pipeline tomorrow without rewriting anything, sqlcx is the only tool in this table that supports that workflow out of the box.

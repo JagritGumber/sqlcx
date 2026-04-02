@@ -1,0 +1,67 @@
+---
+title: MySQL
+description: MySQL 8.0+ support — inline ENUMs, AUTO_INCREMENT, TINYINT(1) booleans.
+---
+
+sqlcx supports MySQL 8.0+ syntax, including the things that make MySQL MySQL — inline ENUMs, `TINYINT(1)` booleans, `AUTO_INCREMENT`, and backtick-quoted identifiers.
+
+```toml
+parser = "mysql"
+```
+
+---
+
+## What's supported
+
+| Feature | Example |
+|---------|---------|
+| Inline ENUMs | `ENUM('pending', 'shipped', 'delivered')` |
+| Auto-increment | `AUTO_INCREMENT` |
+| Boolean convention | `TINYINT(1)` → boolean |
+| `?` parameters | Positional, in order |
+| Generated columns | `GENERATED ALWAYS AS (expr)` |
+| Backtick quoting | `` `column_name` `` |
+
+---
+
+## Type mapping
+
+| SQL Type | IR Category |
+|----------|-------------|
+| `INT`, `INTEGER`, `SMALLINT`, `MEDIUMINT`, `BIGINT`, `TINYINT` | number |
+| `FLOAT`, `DOUBLE`, `DECIMAL`, `NUMERIC` | number |
+| `TINYINT(1)` | boolean |
+| `VARCHAR`, `TEXT`, `CHAR`, `TINYTEXT`, `MEDIUMTEXT`, `LONGTEXT` | string |
+| `DATETIME`, `TIMESTAMP`, `DATE`, `TIME`, `YEAR` | date |
+| `JSON` | json |
+| `BLOB`, `BINARY`, `VARBINARY`, `TINYBLOB`, `MEDIUMBLOB`, `LONGBLOB` | binary |
+| `ENUM('a', 'b', ...)` | enum |
+
+---
+
+## Example
+
+```sql
+CREATE TABLE orders (
+  id         INT AUTO_INCREMENT PRIMARY KEY,
+  status     ENUM('pending', 'processing', 'shipped', 'delivered') NOT NULL DEFAULT 'pending',
+  is_paid    TINYINT(1) NOT NULL DEFAULT 0,
+  total      DECIMAL(10, 2) NOT NULL,
+  notes      TEXT,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+```
+
+sqlcx generates an inline enum for `status` with values `pending`, `processing`, `shipped`, `delivered`. The `is_paid` column maps to boolean, not integer.
+
+---
+
+## Notes
+
+**Inline ENUMs** — Unlike PostgreSQL's `CREATE TYPE`, MySQL defines enum values right in the column definition. sqlcx synthesizes an enum type named after the table and column (e.g., `orders.status` → `OrdersStatus`).
+
+**TINYINT(1)** — MySQL's boolean convention. sqlcx detects this pattern specifically and maps it to boolean. `TINYINT` without `(1)` stays as an integer.
+
+**`?` parameters** — MySQL uses `?` instead of `$1`, `$2`. sqlcx generates parameters in the order they appear in the query.
+
+**Backticks** — sqlcx strips backtick quoting from identifiers when generating field names. `` `user_id` `` becomes `user_id` in generated code.

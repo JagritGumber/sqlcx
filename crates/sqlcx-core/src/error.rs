@@ -37,6 +37,9 @@ pub enum SqlcxError {
 
     #[error("TOML parse error: {0}")]
     Toml(#[from] toml::de::Error),
+
+    #[error("migration error: {0}")]
+    Migrate(String),
 }
 
 pub type Result<T> = std::result::Result<T, SqlcxError>;

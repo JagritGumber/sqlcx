@@ -10,6 +10,8 @@ pub struct SqlcxConfig {
     pub targets: Vec<TargetConfig>,
     #[serde(default)]
     pub overrides: HashMap<String, String>,
+    #[serde(default)]
+    pub migrate: Option<MigrateConfig>,
 }
 
 #[derive(Deserialize, Clone, Debug)]
@@ -20,6 +22,24 @@ pub struct TargetConfig {
     pub driver: String,
     #[serde(default)]
     pub overrides: HashMap<String, String>,
+}
+
+#[derive(Deserialize, Clone, Debug)]
+pub struct MigrateConfig {
+    #[serde(default = "default_migrate_dir")]
+    pub dir: String,
+    #[serde(default)]
+    pub database_url: Option<String>,
+    #[serde(default = "default_auto_regenerate")]
+    pub auto_regenerate: bool,
+}
+
+fn default_migrate_dir() -> String {
+    "./sql/migrations".to_string()
+}
+
+fn default_auto_regenerate() -> bool {
+    true
 }
 
 /// Load config from a directory by auto-detecting sqlcx.toml or sqlcx.json.

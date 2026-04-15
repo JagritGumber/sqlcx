@@ -9,6 +9,10 @@ description = "SQL-first cross-language type-safe code generator — CLI"
 name = "sqlcx"
 path = "src/main.rs"
 
+[features]
+default = ["migrate"]
+migrate = ["sqlcx-core/migrate"]
+
 [dependencies]
 sqlcx-core = { path = "../sqlcx-core" }
 clap = { version = "4", features = ["derive"] }

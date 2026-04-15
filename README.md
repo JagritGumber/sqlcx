@@ -156,6 +156,52 @@ Every version is fully typed from your SQL. No hand-written interfaces. No `any`
 
 ---
 
+## Migrations
+
+sqlcx ships with an optional built-in migrator for PostgreSQL. Schema changes and typed clients stay in sync automatically: after every `migrate up`, sqlcx re-runs the codegen so your types reflect the new shape of the database.
+
+### Configure
+
+Add a `[migrate]` section to `sqlcx.toml` (or run `sqlcx init` which scaffolds this for you):
+
+```toml
+[migrate]
+dir             = "./sql/migrations"
+auto_regenerate = true
+# database_url  = "postgres://user:pass@localhost:5432/mydb"
+```
+
+If `database_url` is not set in config, sqlcx reads `SQLCX_DATABASE_URL` from your environment. Keep secrets out of version control by preferring the env var.
+
+### Workflow
+
+```bash
+# Create a new timestamped migration file in sql/migrations/
+sqlcx migrate new create_users
+
+# Edit the generated file, then apply all pending migrations
+sqlcx migrate up
+
+# See which migrations are pending, applied, or drifted
+sqlcx migrate status
+```
+
+Each `migrate new` creates a file named `{YYYYMMDDHHMMSS}_{name}.sql`. You write plain SQL inside — no annotations, no framework-specific syntax. sqlcx tracks applied state in a `_sqlcx_migrations` table it creates on first run.
+
+### Drift detection
+
+sqlcx stores a SHA-256 checksum of every migration when it is applied. If a file is edited after it has been applied to the database, `migrate up` and `migrate status` will report **DRIFTED** on that version and refuse to apply new migrations until it is resolved. This catches the common "someone edited an old migration" footgun before it corrupts your schema history.
+
+### Auto-regenerate
+
+When `auto_regenerate = true` (the default), a successful `migrate up` automatically runs the codegen pipeline. Your typed clients stay in lockstep with the database without any manual re-run of `sqlcx generate`.
+
+### Cargo feature
+
+The migrator is gated behind the `migrate` Cargo feature (enabled by default for `sqlcx` the CLI binary). Library consumers of `sqlcx-core` who want pure codegen and zero database dependencies can opt out with `default-features = false`.
+
+---
+
 ## Features
 
 ### Multi-language from one SQL source

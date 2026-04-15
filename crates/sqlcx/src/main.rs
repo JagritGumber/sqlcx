@@ -1,3 +1,6 @@
+#[cfg(feature = "migrate")]
+mod migrate_cmd;
+
 use clap::{Parser, Subcommand};
 use sqlcx_core::{
     cache::{compute_hash, read_cache, write_cache, SqlFile},
@@ -25,6 +28,12 @@ enum Commands {
     Init,
     /// Emit JSON Schema for config validation
     Schema,
+    /// Manage database migrations
+    #[cfg(feature = "migrate")]
+    Migrate {
+        #[command(subcommand)]
+        cmd: migrate_cmd::MigrateCommand,
+    },
 }
 
 fn main() {
@@ -44,6 +53,17 @@ fn run(cli: Cli) -> sqlcx_core::error::Result<()> {
             eprintln!("error: schema command not yet implemented");
             std::process::exit(1);
         }
+        #[cfg(feature = "migrate")]
+        Commands::Migrate { cmd } => {
+            let cwd = std::env::current_dir()?;
+            let config = load_config(&cwd)?;
+            let should_regen = migrate_cmd::run(&cwd, &config, cmd)?;
+            if should_regen {
+                eprintln!("Re-generating typed clients...");
+                run_pipeline(true)?;
+            }
+            Ok(())
+        }
     }
 }
 
@@ -59,7 +79,9 @@ fn run_init() -> sqlcx_core::error::Result<()> {
 
     let sql_dir = cwd.join("sql");
     let queries_dir = sql_dir.join("queries");
+    let migrations_dir = sql_dir.join("migrations");
     std::fs::create_dir_all(&queries_dir)?;
+    std::fs::create_dir_all(&migrations_dir)?;
 
     std::fs::write(
         &config_path,
@@ -71,6 +93,12 @@ language = "typescript"
 out      = "./src/db"
 schema   = "typebox"
 driver   = "bun-sql"
+
+[migrate]
+dir             = "./sql/migrations"
+auto_regenerate = true
+# database_url  = "postgres://user:pass@localhost:5432/mydb"
+# or set SQLCX_DATABASE_URL in your environment
 "#,
     )?;
 
@@ -101,8 +129,10 @@ INSERT INTO users (name, email) VALUES ($1, $2);
     eprintln!("Created sqlcx.toml");
     eprintln!("Created sql/schema.sql");
     eprintln!("Created sql/queries/users.sql");
+    eprintln!("Created sql/migrations/");
     eprintln!();
     eprintln!("Run `sqlcx generate` to generate typed code.");
+    eprintln!("Run `sqlcx migrate new <name>` to create your first migration.");
     Ok(())
 }
 

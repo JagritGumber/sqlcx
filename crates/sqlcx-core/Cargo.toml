@@ -5,6 +5,10 @@ edition.workspace = true
 license.workspace = true
 description = "SQL-first cross-language type-safe code generator — core library"
 
+[features]
+default = []
+migrate = ["dep:postgres"]
+
 [dependencies]
 serde = { workspace = true }
 serde_json = { workspace = true }
@@ -14,6 +18,7 @@ sha2 = "0.10"
 toml = "0.8"
 glob = "0.3"
 regex = "1"
+postgres = { version = "0.19", optional = true }
 
 [dev-dependencies]
 insta = { version = "1", features = ["json"] }

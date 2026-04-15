@@ -4,6 +4,8 @@ pub mod config;
 pub mod error;
 pub mod generator;
 pub mod ir;
+#[cfg(feature = "migrate")]
+pub mod migrate;
 pub mod param_naming;
 pub mod parser;
 pub mod utils;

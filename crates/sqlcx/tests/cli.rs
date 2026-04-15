@@ -86,10 +86,11 @@ fn cli_generate_with_fixtures() {
 
     let out_dir = dir.path().join("src/db");
 
+    // TOML literal strings (single quotes) avoid backslash escape processing on Windows paths.
     std::fs::write(
         dir.path().join("sqlcx.toml"),
         format!(
-            "sql = \"{}\"\nparser = \"postgres\"\n\n[[targets]]\nlanguage = \"typescript\"\nout = \"{}\"\nschema = \"typebox\"\ndriver = \"bun-sql\"\n",
+            "sql = '{}'\nparser = \"postgres\"\n\n[[targets]]\nlanguage = \"typescript\"\nout = '{}'\nschema = \"typebox\"\ndriver = \"bun-sql\"\n",
             sql_dir.display(),
             out_dir.display()
         ),
@@ -138,10 +139,11 @@ fn cli_check_validates_without_writing() {
     )
     .unwrap();
 
+    // TOML literal strings (single quotes) avoid backslash escape processing on Windows paths.
     std::fs::write(
         dir.path().join("sqlcx.toml"),
         format!(
-            "sql = \"{}\"\nparser = \"postgres\"\n\n[[targets]]\nlanguage = \"typescript\"\nout = \"./src/db\"\nschema = \"typebox\"\ndriver = \"bun-sql\"\n",
+            "sql = '{}'\nparser = \"postgres\"\n\n[[targets]]\nlanguage = \"typescript\"\nout = \"./src/db\"\nschema = \"typebox\"\ndriver = \"bun-sql\"\n",
             sql_dir.display()
         ),
     )
@@ -177,11 +179,12 @@ fn cli_generate_with_relative_out_path() {
     )
     .unwrap();
 
-    // Use RELATIVE out path — this is what users actually write in config
+    // Use RELATIVE out path -- this is what users actually write in config.
+    // TOML literal strings (single quotes) avoid backslash escape processing on Windows paths.
     std::fs::write(
         dir.path().join("sqlcx.toml"),
         format!(
-            "sql = \"{}\"\nparser = \"postgres\"\n\n[[targets]]\nlanguage = \"typescript\"\nout = \"./src/db\"\nschema = \"typebox\"\ndriver = \"bun-sql\"\n",
+            "sql = '{}'\nparser = \"postgres\"\n\n[[targets]]\nlanguage = \"typescript\"\nout = \"./src/db\"\nschema = \"typebox\"\ndriver = \"bun-sql\"\n",
             sql_dir.display()
         ),
     )

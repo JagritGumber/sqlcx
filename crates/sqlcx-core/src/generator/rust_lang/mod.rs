@@ -17,6 +17,8 @@ pub struct RustPlugin {
 
 impl RustPlugin {
     pub fn new(schema: &str, driver: &str) -> Result<Self> {
+        resolve_schema(schema)?;
+        resolve_driver(driver)?;
         Ok(Self {
             schema_name: schema.to_string(),
             driver_name: driver.to_string(),

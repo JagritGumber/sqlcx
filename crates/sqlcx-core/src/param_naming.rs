@@ -58,22 +58,41 @@ mod tests {
 
     #[test]
     fn simple_column_name() {
-        let params = vec![RawParam { index: 1, column: Some("id".to_string()), r#override: None }];
+        let params = vec![RawParam {
+            index: 1,
+            column: Some("id".to_string()),
+            r#override: None,
+        }];
         assert_eq!(resolve_param_names(&params), vec!["id"]);
     }
 
     #[test]
     fn collision_adds_suffix() {
         let params = vec![
-            RawParam { index: 1, column: Some("created_at".to_string()), r#override: None },
-            RawParam { index: 2, column: Some("created_at".to_string()), r#override: None },
+            RawParam {
+                index: 1,
+                column: Some("created_at".to_string()),
+                r#override: None,
+            },
+            RawParam {
+                index: 2,
+                column: Some("created_at".to_string()),
+                r#override: None,
+            },
         ];
-        assert_eq!(resolve_param_names(&params), vec!["created_at_1", "created_at_2"]);
+        assert_eq!(
+            resolve_param_names(&params),
+            vec!["created_at_1", "created_at_2"]
+        );
     }
 
     #[test]
     fn null_column_falls_back() {
-        let params = vec![RawParam { index: 1, column: None, r#override: None }];
+        let params = vec![RawParam {
+            index: 1,
+            column: None,
+            r#override: None,
+        }];
         assert_eq!(resolve_param_names(&params), vec!["param_1"]);
     }
 
@@ -90,8 +109,16 @@ mod tests {
     #[test]
     fn dedup_override_vs_inferred() {
         let params = vec![
-            RawParam { index: 1, column: Some("id".to_string()), r#override: Some("id".to_string()) },
-            RawParam { index: 2, column: Some("id".to_string()), r#override: None },
+            RawParam {
+                index: 1,
+                column: Some("id".to_string()),
+                r#override: Some("id".to_string()),
+            },
+            RawParam {
+                index: 2,
+                column: Some("id".to_string()),
+                r#override: None,
+            },
         ];
         let result = resolve_param_names(&params);
         assert_eq!(result[0], "id");

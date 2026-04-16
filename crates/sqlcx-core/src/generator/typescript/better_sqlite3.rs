@@ -15,7 +15,9 @@ fn ts_type(sql_type: &SqlType) -> String {
         return format!("{}[]", ts_type(elem));
     }
     match sql_type.category {
-        SqlTypeCategory::String | SqlTypeCategory::Uuid | SqlTypeCategory::Enum => "string".to_string(),
+        SqlTypeCategory::String | SqlTypeCategory::Uuid | SqlTypeCategory::Enum => {
+            "string".to_string()
+        }
         SqlTypeCategory::Number => "number".to_string(),
         SqlTypeCategory::Boolean => "number".to_string(), // SQLite uses 0/1
         SqlTypeCategory::Date => "string".to_string(),    // SQLite stores as text
@@ -33,9 +35,9 @@ fn to_sqlite_params(sql: &str) -> (String, Vec<u32>) {
     let mut chars = sql.chars().peekable();
     while let Some(c) = chars.next() {
         if c == '$' {
-            if chars.peek().map_or(false, |ch| ch.is_ascii_digit()) {
+            if chars.peek().is_some_and(|ch| ch.is_ascii_digit()) {
                 let mut num_str = String::new();
-                while chars.peek().map_or(false, |ch| ch.is_ascii_digit()) {
+                while chars.peek().is_some_and(|ch| ch.is_ascii_digit()) {
                     num_str.push(chars.next().unwrap());
                 }
                 result.push('?');
@@ -112,7 +114,8 @@ fn generate_query_function(query: &QueryDef) -> String {
         let args: Vec<String> = param_indices
             .iter()
             .map(|idx| {
-                query.params
+                query
+                    .params
                     .iter()
                     .find(|p| p.index == *idx)
                     .map(|p| format!("params.{}", p.name))
@@ -195,7 +198,10 @@ impl DriverGenerator for BetterSqlite3Generator {
 
         let mut grouped: BTreeMap<String, Vec<&QueryDef>> = BTreeMap::new();
         for query in &ir.queries {
-            grouped.entry(query.source_file.clone()).or_default().push(query);
+            grouped
+                .entry(query.source_file.clone())
+                .or_default()
+                .push(query);
         }
         for (source_file, queries) in &grouped {
             let basename = Path::new(source_file)
@@ -228,7 +234,11 @@ mod tests {
         let queries = parser
             .parse_queries(queries_sql, &tables, &enums, "queries/users.sql")
             .unwrap();
-        SqlcxIR { tables, queries, enums }
+        SqlcxIR {
+            tables,
+            queries,
+            enums,
+        }
     }
 
     #[test]

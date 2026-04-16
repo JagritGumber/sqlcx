@@ -1,9 +1,10 @@
 use crate::error::{Result, SqlcxError};
+use schemars::JsonSchema;
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::path::Path;
 
-#[derive(Deserialize, Clone, Debug)]
+#[derive(Deserialize, Clone, Debug, JsonSchema)]
 pub struct SqlcxConfig {
     pub sql: String,
     pub parser: String,
@@ -14,7 +15,7 @@ pub struct SqlcxConfig {
     pub migrate: Option<MigrateConfig>,
 }
 
-#[derive(Deserialize, Clone, Debug)]
+#[derive(Deserialize, Clone, Debug, JsonSchema)]
 pub struct TargetConfig {
     pub language: String,
     pub out: String,
@@ -24,7 +25,7 @@ pub struct TargetConfig {
     pub overrides: HashMap<String, String>,
 }
 
-#[derive(Deserialize, Clone, Debug)]
+#[derive(Deserialize, Clone, Debug, JsonSchema)]
 pub struct MigrateConfig {
     #[serde(default = "default_migrate_dir")]
     pub dir: String,

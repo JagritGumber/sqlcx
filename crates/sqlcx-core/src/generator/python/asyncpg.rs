@@ -15,11 +15,16 @@ fn py_type(sql_type: &SqlType) -> String {
         return format!("list[{}]", py_type(elem));
     }
     match sql_type.category {
-        SqlTypeCategory::String | SqlTypeCategory::Uuid | SqlTypeCategory::Enum => "str".to_string(),
+        SqlTypeCategory::String | SqlTypeCategory::Uuid | SqlTypeCategory::Enum => {
+            "str".to_string()
+        }
         SqlTypeCategory::Number => {
             let upper = sql_type.raw.to_uppercase();
-            if upper.contains("REAL") || upper.contains("FLOAT") || upper.contains("DOUBLE")
-                || upper.contains("DECIMAL") || upper.contains("NUMERIC")
+            if upper.contains("REAL")
+                || upper.contains("FLOAT")
+                || upper.contains("DOUBLE")
+                || upper.contains("DECIMAL")
+                || upper.contains("NUMERIC")
             {
                 "float".to_string()
             } else {
@@ -82,7 +87,11 @@ fn generate_query_function(query: &QueryDef) -> String {
     let params_class = generate_params_class(query);
     let has_params = !query.params.is_empty();
     let params_type_name = format!("{}Params", pascal_case(&query.name));
-    let sql_const = format!("{}_SQL = \"{}\"", fn_name.to_uppercase(), escape_sql(&query.sql));
+    let sql_const = format!(
+        "{}_SQL = \"{}\"",
+        fn_name.to_uppercase(),
+        escape_sql(&query.sql)
+    );
 
     let params_sig = if has_params {
         format!(", params: {}", params_type_name)
@@ -126,14 +135,16 @@ fn generate_query_function(query: &QueryDef) -> String {
             "None".to_string(),
             format!(
                 "    await conn.execute({}_SQL{})",
-                fn_name.to_uppercase(), params_arg
+                fn_name.to_uppercase(),
+                params_arg
             ),
         ),
         QueryCommand::ExecResult => (
             "int".to_string(),
             format!(
                 "    result = await conn.execute({}_SQL{})\n    return int(result.split()[-1])",
-                fn_name.to_uppercase(), params_arg
+                fn_name.to_uppercase(),
+                params_arg
             ),
         ),
     };
@@ -185,7 +196,10 @@ impl DriverGenerator for AsyncpgGenerator {
 
         let mut grouped: BTreeMap<String, Vec<&QueryDef>> = BTreeMap::new();
         for query in &ir.queries {
-            grouped.entry(query.source_file.clone()).or_default().push(query);
+            grouped
+                .entry(query.source_file.clone())
+                .or_default()
+                .push(query);
         }
         for (source_file, queries) in &grouped {
             let basename = Path::new(source_file)
@@ -218,7 +232,11 @@ mod tests {
         let queries = parser
             .parse_queries(queries_sql, &tables, &enums, "queries/users.sql")
             .unwrap();
-        SqlcxIR { tables, queries, enums }
+        SqlcxIR {
+            tables,
+            queries,
+            enums,
+        }
     }
 
     #[test]

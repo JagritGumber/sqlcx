@@ -1,12 +1,11 @@
 use sqlcx_core::{
-    config::TargetConfig,
-    generator::resolve_language,
-    ir::SqlcxIR,
-    parser::resolve_parser,
+    config::TargetConfig, generator::resolve_language, ir::SqlcxIR, parser::resolve_parser,
 };
 
-const SCHEMA_SQL: &str =
-    include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../tests/fixtures/schema.sql"));
+const SCHEMA_SQL: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../tests/fixtures/schema.sql"
+));
 const USERS_SQL: &str = include_str!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/../../tests/fixtures/queries/users.sql"
@@ -58,8 +57,20 @@ fn ir_json_output_matches_ts_shape() {
     };
 
     let json = serde_json::to_string_pretty(&ir).unwrap();
-    assert!(json.contains("\"primaryKey\""), "Expected camelCase primaryKey");
-    assert!(json.contains("\"hasDefault\""), "Expected camelCase hasDefault");
-    assert!(!json.contains("\"primary_key\""), "Should not contain snake_case");
-    assert!(!json.contains("\"has_default\""), "Should not contain snake_case");
+    assert!(
+        json.contains("\"primaryKey\""),
+        "Expected camelCase primaryKey"
+    );
+    assert!(
+        json.contains("\"hasDefault\""),
+        "Expected camelCase hasDefault"
+    );
+    assert!(
+        !json.contains("\"primary_key\""),
+        "Should not contain snake_case"
+    );
+    assert!(
+        !json.contains("\"has_default\""),
+        "Should not contain snake_case"
+    );
 }

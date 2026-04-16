@@ -19,7 +19,7 @@ pub struct Users {
     pub created_at: chrono::NaiveDateTime,
 }
 
-/// Insert type for users — columns with defaults are optional
+/// Insert type for users - columns with defaults are optional
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct InsertUsers {
     pub id: Option<i32>,
@@ -41,7 +41,7 @@ pub struct Posts {
     pub created_at: chrono::NaiveDateTime,
 }
 
-/// Insert type for posts — columns with defaults are optional
+/// Insert type for posts - columns with defaults are optional
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct InsertPosts {
     pub id: Option<i32>,

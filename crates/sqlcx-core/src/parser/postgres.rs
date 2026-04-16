@@ -5,11 +5,10 @@ use regex::Regex;
 
 use crate::annotations::extract_annotations;
 use crate::error::Result;
-use crate::ir::{
-    ColumnDef, EnumDef, QueryDef, SqlType, SqlTypeCategory, TableDef,
-};
+use crate::ir::{ColumnDef, EnumDef, QueryDef, SqlType, SqlTypeCategory, TableDef};
 use crate::parser::{
-    build_params, make_unknown_column, split_column_defs, split_query_blocks, DatabaseParser,
+    build_params, ensure_supported_select_expr, make_unknown_column, split_column_defs,
+    split_query_blocks, DatabaseParser,
 };
 
 // ── Static regex patterns ────────────────────────────────────────────────────
@@ -29,38 +28,30 @@ static CONSTRAINT_RE: LazyLock<Regex> = LazyLock::new(|| {
 
 static COL_NAME_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^(\w+)\s+").unwrap());
 
-static COL_TYPE_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^(\w+(?:\[\])?)").unwrap());
+static COL_TYPE_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^(\w+(?:\[\])?)").unwrap());
 
-static NOT_NULL_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(?i)\bNOT\s+NULL\b").unwrap());
+static NOT_NULL_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?i)\bNOT\s+NULL\b").unwrap());
 
-static DEFAULT_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(?i)\bDEFAULT\b").unwrap());
+static DEFAULT_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?i)\bDEFAULT\b").unwrap());
 
 static PK_INLINE_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"(?i)\bPRIMARY\s+KEY\b").unwrap());
 
-static UNIQUE_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(?i)\bUNIQUE\b").unwrap());
+static UNIQUE_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?i)\bUNIQUE\b").unwrap());
 
 static TABLE_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"(?is)CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?(\w+)\s*\(([\s\S]*?)\)\s*;")
         .unwrap()
 });
 
-static TABLE_PK_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"(?i)^PRIMARY\s+KEY\s*\(\s*([\w\s,]+)\s*\)").unwrap()
-});
+static TABLE_PK_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?i)^PRIMARY\s+KEY\s*\(\s*([\w\s,]+)\s*\)").unwrap());
 
-static PARAM_INDEX_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"\$(\d+)").unwrap());
+static PARAM_INDEX_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\$(\d+)").unwrap());
 
 static INSERT_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(
-        r"(?i)INSERT\s+INTO\s+\w+\s*\(\s*([\w\s,]+)\s*\)\s*VALUES\s*\(\s*([\$\d\s,]+)\s*\)",
-    )
-    .unwrap()
+    Regex::new(r"(?i)INSERT\s+INTO\s+\w+\s*\(\s*([\w\s,]+)\s*\)\s*VALUES\s*\(\s*([\$\d\s,]+)\s*\)")
+        .unwrap()
 });
 
 static WHERE_PARAM_RE: LazyLock<Regex> = LazyLock::new(|| {
@@ -73,12 +64,10 @@ static WHERE_PARAM_RE: LazyLock<Regex> = LazyLock::new(|| {
 static FROM_TABLE_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"(?i)(?:FROM|INTO|UPDATE)\s+(\w+)").unwrap());
 
-static RETURNING_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"(?i)\bRETURNING\s+([\s\S]+?)(?:;?\s*)$").unwrap()
-});
+static RETURNING_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?i)\bRETURNING\s+([\s\S]+?)(?:;?\s*)$").unwrap());
 
-static SELECT_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(?i)^\s*SELECT\b").unwrap());
+static SELECT_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?i)^\s*SELECT\b").unwrap());
 
 static SELECT_COLS_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"(?i)SELECT\s+([\s\S]+?)\s+FROM\b").unwrap());
@@ -97,8 +86,13 @@ fn type_category(normalized: &str) -> Option<SqlTypeCategory> {
         | "bigserial" | "real" | "double precision" | "numeric" | "decimal" | "float"
         | "float4" | "float8" => Some(SqlTypeCategory::Number),
         "boolean" | "bool" => Some(SqlTypeCategory::Boolean),
-        "timestamp" | "timestamptz" | "date" | "time" | "timetz"
-        | "timestamp without time zone" | "timestamp with time zone" => Some(SqlTypeCategory::Date),
+        "timestamp"
+        | "timestamptz"
+        | "date"
+        | "time"
+        | "timetz"
+        | "timestamp without time zone"
+        | "timestamp with time zone" => Some(SqlTypeCategory::Date),
         "json" | "jsonb" => Some(SqlTypeCategory::Json),
         "uuid" => Some(SqlTypeCategory::Uuid),
         "bytea" => Some(SqlTypeCategory::Binary),
@@ -114,8 +108,7 @@ fn resolve_sql_type(raw: &str, enum_names: &HashSet<String>) -> SqlType {
     let trimmed = raw.trim();
 
     // Array detection
-    if trimmed.ends_with("[]") {
-        let base_raw = &trimmed[..trimmed.len() - 2];
+    if let Some(base_raw) = trimmed.strip_suffix("[]") {
         let element = resolve_sql_type(base_raw, enum_names);
         return SqlType {
             raw: trimmed.to_string(),
@@ -449,39 +442,44 @@ fn resolve_returning_columns(sql: &str, table: Option<&TableDef>) -> Option<Vec<
     )
 }
 
-fn resolve_return_columns(sql: &str, table: Option<&TableDef>) -> Vec<ColumnDef> {
+fn resolve_return_columns(
+    sql: &str,
+    table: Option<&TableDef>,
+    source_file: &str,
+) -> Result<Vec<ColumnDef>> {
     // Check RETURNING clause first
     if let Some(returning) = resolve_returning_columns(sql, table) {
-        return returning;
+        return Ok(returning);
     }
 
     if !SELECT_RE.is_match(sql) {
-        return Vec::new();
+        return Ok(Vec::new());
     }
 
     let Some(cap) = SELECT_COLS_RE.captures(sql) else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     let cols_part = cap[1].trim();
 
     if cols_part == "*" {
-        return table.map(|t| t.columns.clone()).unwrap_or_default();
+        return Ok(table.map(|t| t.columns.clone()).unwrap_or_default());
     }
 
     let Some(table) = table else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
 
     let col_names: Vec<&str> = cols_part.split(',').map(|s| s.trim()).collect();
 
     col_names
         .iter()
-        .map(|&col_expr| {
+        .map(|&col_expr| -> Result<ColumnDef> {
+            ensure_supported_select_expr(col_expr, source_file)?;
             let expr_lower = col_expr.to_lowercase();
             if let Some(alias_cap) = ALIAS_RE.captures(&expr_lower) {
                 let actual = &alias_cap[1];
                 let alias = alias_cap[2].to_string();
-                table
+                Ok(table
                     .columns
                     .iter()
                     .find(|c| c.name == actual)
@@ -490,14 +488,14 @@ fn resolve_return_columns(sql: &str, table: Option<&TableDef>) -> Vec<ColumnDef>
                         col.alias = Some(alias);
                         col
                     })
-                    .unwrap_or_else(|| make_unknown_column(actual))
+                    .unwrap_or_else(|| make_unknown_column(actual)))
             } else {
-                table
+                Ok(table
                     .columns
                     .iter()
                     .find(|c| c.name == expr_lower)
                     .cloned()
-                    .unwrap_or_else(|| make_unknown_column(&expr_lower))
+                    .unwrap_or_else(|| make_unknown_column(&expr_lower)))
             }
         })
         .collect()
@@ -510,6 +508,12 @@ pub struct PostgresParser;
 impl PostgresParser {
     pub fn new() -> Self {
         Self
+    }
+}
+
+impl Default for PostgresParser {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -537,7 +541,7 @@ impl DatabaseParser for PostgresParser {
             let param_indices = extract_param_indices(&block.sql);
             let inferred_cols = infer_param_columns(&block.sql);
             let params = build_params(&block.comments, table, param_indices, inferred_cols);
-            let returns = resolve_return_columns(&block.sql, table);
+            let returns = resolve_return_columns(&block.sql, table, source_file)?;
 
             let clean_sql = block
                 .sql
@@ -706,10 +710,7 @@ mod tests {
         let arr = resolve_sql_type("TEXT[]", &enums);
         assert_eq!(arr.category, SqlTypeCategory::String);
         assert!(arr.element_type.is_some());
-        assert_eq!(
-            arr.element_type.unwrap().category,
-            SqlTypeCategory::String
-        );
+        assert_eq!(arr.element_type.unwrap().category, SqlTypeCategory::String);
     }
 
     #[test]

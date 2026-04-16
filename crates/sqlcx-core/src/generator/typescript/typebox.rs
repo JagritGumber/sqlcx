@@ -18,7 +18,9 @@ fn json_shape_to_typebox(shape: &JsonShape) -> String {
             entries.sort_by_key(|(k, _)| k.as_str());
             let inner = entries
                 .iter()
-                .map(|(key, val)| format!("\"{}\": {}", escape_string(key), json_shape_to_typebox(val)))
+                .map(|(key, val)| {
+                    format!("\"{}\": {}", escape_string(key), json_shape_to_typebox(val))
+                })
                 .collect::<Vec<_>>()
                 .join(", ");
             format!("Type.Object({{ {} }})", inner)
@@ -27,7 +29,10 @@ fn json_shape_to_typebox(shape: &JsonShape) -> String {
             format!("Type.Array({})", json_shape_to_typebox(element))
         }
         JsonShape::Nullable { inner } => {
-            format!("Type.Union([{}, Type.Null()])", json_shape_to_typebox(inner))
+            format!(
+                "Type.Union([{}, Type.Null()])",
+                json_shape_to_typebox(inner)
+            )
         }
     }
 }
@@ -106,10 +111,20 @@ pub fn insert_column(col: &ColumnDef, overrides: &Overrides) -> String {
     }
 }
 
-fn object_body(columns: &[ColumnDef], overrides: &Overrides, mapper: fn(&ColumnDef, &Overrides) -> String) -> String {
+fn object_body(
+    columns: &[ColumnDef],
+    overrides: &Overrides,
+    mapper: fn(&ColumnDef, &Overrides) -> String,
+) -> String {
     let fields = columns
         .iter()
-        .map(|col| format!("  \"{}\": {}", escape_string(&col.name), mapper(col, overrides)))
+        .map(|col| {
+            format!(
+                "  \"{}\": {}",
+                escape_string(&col.name),
+                mapper(col, overrides)
+            )
+        })
         .collect::<Vec<_>>()
         .join(",\n");
     format!("{{\n{}\n}}", fields)
@@ -222,9 +237,7 @@ mod tests {
         assert!(content.contains("export const UserStatus = Type.Union("));
         assert!(content.contains("export const SelectUsers = Type.Object("));
         assert!(content.contains("export const InsertUsers = Type.Object("));
-        assert!(
-            content.contains("export type SelectUsers = Prettify<Static<typeof SelectUsers>>;")
-        );
+        assert!(content.contains("export type SelectUsers = Prettify<Static<typeof SelectUsers>>;"));
         // Snapshot for exact comparison
         insta::assert_snapshot!("typebox_schema", content);
     }

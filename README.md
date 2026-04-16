@@ -287,9 +287,20 @@ SELECT id, email FROM users;
 
 Generates `ListUserEmailsRow` with only `{ id, email }` — not the full table type.
 
+### Current query boundary
+
+sqlcx currently supports single-table query shape inference for generated row types and parameter typing.
+
+- `SELECT * FROM users`
+- `SELECT id, email FROM users`
+- `INSERT ... VALUES (...)`
+- `UPDATE ... RETURNING id, name`
+
+Qualified select expressions and join-shaped projections such as `SELECT users.id, orgs.slug ...` are rejected for now instead of generating invalid code. That keeps the generated output sound while the multi-table IR is still intentionally narrow.
+
 ### Caching
 
-sqlcx hashes your SQL files. If nothing changed, parsing is skipped entirely. Subsequent runs are near-instant.
+sqlcx hashes your SQL files together with the active parser. If nothing relevant changed, parsing is skipped entirely. Subsequent runs are near-instant.
 
 ```bash
 # First run: parses SQL
@@ -345,7 +356,7 @@ $ npx sqlcx generate    # ~20ms
 npx sqlcx generate    # Parse SQL → generate typed code
 npx sqlcx check       # Validate SQL without generating (CI-friendly)
 npx sqlcx init        # Scaffold sql/ directory + sqlcx.toml
-npx sqlcx schema      # Emit JSON Schema for config validation (coming soon)
+npx sqlcx schema      # Emit JSON Schema for config validation
 ```
 
 ---

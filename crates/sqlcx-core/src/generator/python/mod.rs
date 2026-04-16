@@ -1,10 +1,10 @@
-pub mod pydantic;
-pub mod psycopg;
 pub mod asyncpg;
+pub mod psycopg;
+pub mod pydantic;
 
 use crate::config::TargetConfig;
 use crate::error::{Result, SqlcxError};
-use crate::generator::{GeneratedFile, LanguagePlugin, SchemaGenerator, DriverGenerator};
+use crate::generator::{DriverGenerator, GeneratedFile, LanguagePlugin, SchemaGenerator};
 use crate::ir::SqlcxIR;
 
 use self::pydantic::PydanticGenerator;
@@ -16,6 +16,8 @@ pub struct PythonPlugin {
 
 impl PythonPlugin {
     pub fn new(schema: &str, driver: &str) -> Result<Self> {
+        resolve_schema(schema)?;
+        resolve_driver(driver)?;
         Ok(Self {
             schema_name: schema.to_string(),
             driver_name: driver.to_string(),
@@ -70,7 +72,11 @@ mod tests {
         let queries = parser
             .parse_queries(queries_sql, &tables, &enums, "queries/users.sql")
             .unwrap();
-        SqlcxIR { tables, queries, enums }
+        SqlcxIR {
+            tables,
+            queries,
+            enums,
+        }
     }
 
     #[test]

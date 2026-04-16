@@ -18,10 +18,12 @@ struct CacheFile {
 
 /// Compute SHA-256 hash of SQL files. Files are sorted by path, each path+content
 /// separated by null bytes (matching the TS implementation).
-pub fn compute_hash(files: &[SqlFile]) -> String {
+pub fn compute_hash(files: &[SqlFile], parser_name: &str) -> String {
     let mut sorted: Vec<&SqlFile> = files.iter().collect();
     sorted.sort_by(|a, b| a.path.cmp(&b.path));
     let mut hasher = Sha256::new();
+    hasher.update(parser_name.as_bytes());
+    hasher.update(b"\0");
     for f in &sorted {
         hasher.update(f.path.as_bytes());
         hasher.update(b"\0");
@@ -88,7 +90,10 @@ mod tests {
                 content: "SELECT 2;".to_string(),
             },
         ];
-        assert_eq!(compute_hash(&files), compute_hash(&files));
+        assert_eq!(
+            compute_hash(&files, "postgres"),
+            compute_hash(&files, "postgres")
+        );
     }
 
     #[test]
@@ -113,7 +118,19 @@ mod tests {
                 content: "SELECT 2;".to_string(),
             },
         ];
-        assert_eq!(compute_hash(&a), compute_hash(&b));
+        assert_eq!(compute_hash(&a, "postgres"), compute_hash(&b, "postgres"));
+    }
+
+    #[test]
+    fn compute_hash_changes_with_parser_name() {
+        let files = vec![SqlFile {
+            path: "a.sql".to_string(),
+            content: "SELECT 1;".to_string(),
+        }];
+        assert_ne!(
+            compute_hash(&files, "postgres"),
+            compute_hash(&files, "mysql")
+        );
     }
 
     #[test]

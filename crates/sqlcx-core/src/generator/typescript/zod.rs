@@ -113,7 +113,13 @@ fn object_body(
 ) -> String {
     let fields = columns
         .iter()
-        .map(|col| format!("  \"{}\": {}", escape_string(&col.name), mapper(col, overrides)))
+        .map(|col| {
+            format!(
+                "  \"{}\": {}",
+                escape_string(&col.name),
+                mapper(col, overrides)
+            )
+        })
         .collect::<Vec<_>>()
         .join(",\n");
     format!("{{\n{}\n}}", fields)
@@ -209,7 +215,11 @@ mod tests {
         let schema_sql = include_str!("../../../../../tests/fixtures/schema.sql");
         let parser = PostgresParser::new();
         let (tables, enums) = parser.parse_schema(schema_sql).unwrap();
-        SqlcxIR { tables, queries: vec![], enums }
+        SqlcxIR {
+            tables,
+            queries: vec![],
+            enums,
+        }
     }
 
     #[test]

@@ -1,10 +1,10 @@
-pub mod structs;
 pub mod database_sql;
 pub mod pgx;
+pub mod structs;
 
-use crate::error::{Result, SqlcxError};
 use crate::config::TargetConfig;
-use crate::generator::{GeneratedFile, LanguagePlugin, SchemaGenerator, DriverGenerator};
+use crate::error::{Result, SqlcxError};
+use crate::generator::{DriverGenerator, GeneratedFile, LanguagePlugin, SchemaGenerator};
 use crate::ir::SqlcxIR;
 
 pub struct GoPlugin {
@@ -14,6 +14,8 @@ pub struct GoPlugin {
 
 impl GoPlugin {
     pub fn new(schema: &str, driver: &str) -> Result<Self> {
+        resolve_schema(schema)?;
+        resolve_driver(driver)?;
         Ok(Self {
             schema_name: schema.to_string(),
             driver_name: driver.to_string(),
@@ -52,10 +54,10 @@ impl LanguagePlugin for GoPlugin {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::collections::HashMap;
+    use crate::generator::LanguagePlugin;
     use crate::parser::postgres::PostgresParser;
     use crate::parser::DatabaseParser;
-    use crate::generator::LanguagePlugin;
+    use std::collections::HashMap;
 
     fn parse_fixture_ir() -> SqlcxIR {
         let schema_sql = include_str!("../../../../../tests/fixtures/schema.sql");
@@ -65,7 +67,11 @@ mod tests {
         let queries = parser
             .parse_queries(queries_sql, &tables, &enums, "queries/users.sql")
             .unwrap();
-        SqlcxIR { tables, queries, enums }
+        SqlcxIR {
+            tables,
+            queries,
+            enums,
+        }
     }
 
     #[test]

@@ -103,11 +103,7 @@ fn generate_select_struct(
             )
         })
         .collect();
-    format!(
-        "type {} struct {{\n{}\n}}",
-        struct_name,
-        fields.join("\n")
-    )
+    format!("type {} struct {{\n{}\n}}", struct_name, fields.join("\n"))
 }
 
 fn generate_insert_struct(
@@ -142,7 +138,8 @@ fn generate_insert_struct(
         .collect();
     format!(
         "// {} has optional fields for columns with defaults\ntype {} struct {{\n{}\n}}",
-        struct_name, struct_name,
+        struct_name,
+        struct_name,
         fields.join("\n")
     )
 }
@@ -224,8 +221,16 @@ impl GoStructGenerator {
         }
 
         for table in &ir.tables {
-            parts.push(generate_select_struct(&table.name, &table.columns, overrides));
-            parts.push(generate_insert_struct(&table.name, &table.columns, overrides));
+            parts.push(generate_select_struct(
+                &table.name,
+                &table.columns,
+                overrides,
+            ));
+            parts.push(generate_insert_struct(
+                &table.name,
+                &table.columns,
+                overrides,
+            ));
         }
 
         parts.join("\n\n") + "\n"

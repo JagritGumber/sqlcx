@@ -320,9 +320,9 @@ fn cli_generate_prunes_stale_query_files() {
 
 #[test]
 fn cli_generate_accepts_multi_table_inner_join() {
-    // JOIN queries with qualified columns now succeed via the multi-table
-    // resolver path. Single-table qualified selects are still rejected —
-    // that's a separate effort (PR #32).
+    // JOIN queries with qualified columns succeed via the multi-table
+    // resolver. Single-table qualified selects also succeed via the
+    // single-table path (see cli_generate_accepts_qualified_single_table_selects).
     let dir = tempfile::tempdir().unwrap();
     let sql_dir = dir.path().join("sql");
     let queries_dir = sql_dir.join("queries");
@@ -357,6 +357,51 @@ fn cli_generate_accepts_multi_table_inner_join() {
         "expected success, stderr: {}",
         String::from_utf8_lossy(&output.stderr)
     );
+}
+
+#[test]
+fn cli_generate_accepts_qualified_single_table_selects() {
+    let dir = tempfile::tempdir().unwrap();
+    let sql_dir = dir.path().join("sql");
+    let queries_dir = sql_dir.join("queries");
+    std::fs::create_dir_all(&queries_dir).unwrap();
+
+    std::fs::copy(
+        concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../tests/fixtures/schema.sql"
+        ),
+        sql_dir.join("schema.sql"),
+    )
+    .unwrap();
+
+    std::fs::write(
+        queries_dir.join("users.sql"),
+        "-- name: ListUsersQualified :many\nSELECT users.id, users.name AS user_name FROM users;\n",
+    )
+    .unwrap();
+
+    std::fs::write(
+        dir.path().join("sqlcx.toml"),
+        "sql = \"./sql\"\nparser = \"postgres\"\n\n[[targets]]\nlanguage = \"typescript\"\nout = \"./src/db\"\nschema = \"typebox\"\ndriver = \"bun-sql\"\n",
+    )
+    .unwrap();
+
+    let output = sqlcx_bin()
+        .arg("generate")
+        .current_dir(dir.path())
+        .output()
+        .unwrap();
+
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let content = std::fs::read_to_string(dir.path().join("src/db/users.queries.ts")).unwrap();
+    assert!(content.contains("export interface ListUsersQualifiedRow"));
+    assert!(content.contains("id: number;"));
+    assert!(content.contains("user_name: string;"));
 }
 
 #[test]

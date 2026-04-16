@@ -35,18 +35,81 @@ pub fn resolve_parser(name: &str) -> Result<Box<dyn DatabaseParser>> {
     }
 }
 
-pub(crate) fn ensure_supported_select_expr(expr: &str, source_file: &str) -> Result<()> {
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct ParsedSelectExpr {
+    pub source_name: String,
+    pub alias: Option<String>,
+}
+
+pub(crate) fn strip_identifier_quotes(ident: &str) -> &str {
+    ident
+        .strip_prefix('`')
+        .and_then(|s| s.strip_suffix('`'))
+        .or_else(|| ident.strip_prefix('"').and_then(|s| s.strip_suffix('"')))
+        .or_else(|| ident.strip_prefix('[').and_then(|s| s.strip_suffix(']')))
+        .unwrap_or(ident)
+}
+
+pub(crate) fn parse_select_expr(expr: &str) -> ParsedSelectExpr {
     let trimmed = expr.trim();
-    if trimmed.contains('.') {
-        return Err(crate::error::SqlcxError::ParseError {
-            file: source_file.to_string(),
-            message: format!(
-                "qualified select expressions are not supported yet: `{}`",
-                trimmed
-            ),
-        });
+    let lower = trimmed.to_lowercase();
+
+    if let Some(idx) = lower.rfind(" as ") {
+        let source = trimmed[..idx].trim();
+        let alias = trimmed[idx + 4..].trim();
+        return ParsedSelectExpr {
+            source_name: source.to_string(),
+            alias: Some(strip_identifier_quotes(alias).to_lowercase()),
+        };
     }
-    Ok(())
+
+    ParsedSelectExpr {
+        source_name: trimmed.to_string(),
+        alias: None,
+    }
+}
+
+pub(crate) fn resolve_single_table_select_column(
+    expr: &str,
+    allowed_prefixes: &[&str],
+    table: &TableDef,
+    source_file: &str,
+) -> Result<ColumnDef> {
+    let parsed = parse_select_expr(expr);
+    let source = parsed.source_name.trim();
+    let parts: Vec<&str> = source.split('.').collect();
+
+    let column_name = match parts.as_slice() {
+        [column] => strip_identifier_quotes(column).to_lowercase(),
+        [prefix, column] => {
+            let prefix = strip_identifier_quotes(prefix).to_lowercase();
+            if !allowed_prefixes.iter().any(|allowed| *allowed == prefix) {
+                return Err(crate::error::SqlcxError::ParseError {
+                    file: source_file.to_string(),
+                    message: format!(
+                        "multi-table or unsupported qualified select expression: `{}`",
+                        expr.trim()
+                    ),
+                });
+            }
+            strip_identifier_quotes(column).to_lowercase()
+        }
+        _ => {
+            return Err(crate::error::SqlcxError::ParseError {
+                file: source_file.to_string(),
+                message: format!("unsupported select expression: `{}`", expr.trim()),
+            });
+        }
+    };
+
+    let mut col = table
+        .columns
+        .iter()
+        .find(|c| c.name == column_name)
+        .cloned()
+        .unwrap_or_else(|| make_unknown_column(&column_name));
+    col.alias = parsed.alias;
+    Ok(col)
 }
 
 // ── Shared regex for split_query_blocks ──────────────────────────────────────

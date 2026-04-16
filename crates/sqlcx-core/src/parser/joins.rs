@@ -13,17 +13,17 @@
 //!   table and column in the alias map and return a fully-typed
 //!   [`ColumnDef`] with `source_table` populated.
 //!
-//! The helpers are **not yet wired into any dialect parser**. The existing
-//! [`ensure_supported_select_expr`](super::ensure_supported_select_expr)
-//! guard still rejects qualified selects in every dialect. A follow-up PR
-//! per dialect (postgres, mysql, sqlite) will flip each to call into
-//! these helpers when JOIN clauses are present.
+//! Each dialect's `resolve_return_columns` calls into these helpers when
+//! [`has_outer_join`] detects a JOIN in the outer FROM. Single-table queries
+//! continue to use the per-dialect single-table path
+//! ([`super::resolve_single_table_select_column`]), which now also accepts
+//! `table.column` projections that resolve against the inferred base table.
 //!
-//! Scope for v1.1: INNER JOIN only, qualified columns only, no `SELECT *`
-//! across joins. OUTER JOIN nullability propagation, `USING`, NATURAL
-//! JOIN, lateral joins, and self-joins with aliases are v1.2 work — they
-//! would require `ColumnDef.nullable` to become per-query-context rather
-//! than per-schema.
+//! Scope: INNER JOIN only, qualified columns only, no `SELECT *` across
+//! joins. OUTER JOIN nullability propagation, `USING`, NATURAL JOIN,
+//! lateral joins, and self-joins with aliases require `ColumnDef.nullable`
+//! to become per-query-context rather than per-schema; that's a later
+//! release.
 
 use std::collections::HashMap;
 use std::sync::LazyLock;

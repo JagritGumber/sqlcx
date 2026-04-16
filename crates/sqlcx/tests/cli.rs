@@ -354,3 +354,52 @@ fn cli_generate_rejects_qualified_selects() {
     assert!(String::from_utf8_lossy(&output.stderr)
         .contains("qualified select expressions are not supported yet"));
 }
+
+#[test]
+fn cli_generate_keeps_files_from_multiple_targets_in_same_out_dir() {
+    let dir = tempfile::tempdir().unwrap();
+    let sql_dir = dir.path().join("sql");
+    let queries_dir = sql_dir.join("queries");
+    std::fs::create_dir_all(&queries_dir).unwrap();
+
+    std::fs::copy(
+        concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../tests/fixtures/schema.sql"
+        ),
+        sql_dir.join("schema.sql"),
+    )
+    .unwrap();
+    std::fs::copy(
+        concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../tests/fixtures/queries/users.sql"
+        ),
+        queries_dir.join("users.sql"),
+    )
+    .unwrap();
+
+    std::fs::write(
+        dir.path().join("sqlcx.toml"),
+        "sql = \"./sql\"\nparser = \"postgres\"\n\n[[targets]]\nlanguage = \"typescript\"\nout = \"./shared\"\nschema = \"typebox\"\ndriver = \"bun-sql\"\n\n[[targets]]\nlanguage = \"python\"\nout = \"./shared\"\nschema = \"pydantic\"\ndriver = \"psycopg\"\n",
+    )
+    .unwrap();
+
+    let output = sqlcx_bin()
+        .arg("generate")
+        .current_dir(dir.path())
+        .output()
+        .unwrap();
+
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(dir.path().join("shared/schema.ts").exists());
+    assert!(dir.path().join("shared/client.ts").exists());
+    assert!(dir.path().join("shared/users.queries.ts").exists());
+    assert!(dir.path().join("shared/models.py").exists());
+    assert!(dir.path().join("shared/client.py").exists());
+    assert!(dir.path().join("shared/users_queries.py").exists());
+}

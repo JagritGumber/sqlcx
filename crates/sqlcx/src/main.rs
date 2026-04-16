@@ -8,9 +8,11 @@ use sqlcx_core::{
     cache::{compute_hash, read_cache, write_cache, SqlFile},
     config::{load_config, SqlcxConfig, TargetConfig},
     generator::resolve_language,
+    generator::GeneratedFile,
     ir::SqlcxIR,
     parser::resolve_parser,
 };
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 #[derive(Parser)]
@@ -181,9 +183,15 @@ fn run_pipeline(write_output: bool) -> sqlcx_core::error::Result<()> {
     let validated_targets = validate_targets(&config)?;
 
     if write_output {
+        let mut outputs_by_dir: BTreeMap<PathBuf, Vec<GeneratedFile>> = BTreeMap::new();
+
         for (target, merged_target, plugin) in validated_targets {
             let files = plugin.generate(&ir, &merged_target)?;
             let out_dir = resolve_path(&cwd, &target.out);
+            outputs_by_dir.entry(out_dir).or_default().extend(files);
+        }
+
+        for (out_dir, files) in outputs_by_dir {
             std::fs::create_dir_all(&out_dir)?;
             sync_generated_files(&out_dir, &files)?;
             for file in files {

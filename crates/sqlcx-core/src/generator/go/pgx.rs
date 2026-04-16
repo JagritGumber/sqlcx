@@ -89,10 +89,7 @@ fn generate_row_struct(query: &QueryDef) -> Option<String> {
 
 fn generate_result_struct(query: &QueryDef) -> String {
     let type_name = format!("{}Result", pascal_case(&query.name));
-    format!(
-        "type {} struct {{\n\tRowsAffected int64\n}}",
-        type_name
-    )
+    format!("type {} struct {{\n\tRowsAffected int64\n}}", type_name)
 }
 
 fn scan_fields(columns: &[ColumnDef]) -> String {
@@ -147,7 +144,13 @@ fn generate_query_function(query: &QueryDef) -> String {
     parts.push(format!(
         "const {} = \"{}\"",
         const_name,
-        query.sql.replace('\\', "\\\\").replace('"', "\\\"").replace('\n', "\\n").replace('\r', "\\r").replace('\t', "\\t"),
+        query
+            .sql
+            .replace('\\', "\\\\")
+            .replace('"', "\\\"")
+            .replace('\n', "\\n")
+            .replace('\r', "\\r")
+            .replace('\t', "\\t"),
     ));
 
     match query.command {
@@ -169,8 +172,7 @@ fn generate_query_function(query: &QueryDef) -> String {
 \t\treturn nil, err
 \t}}
 \treturn &i, nil\n}}",
-                func_name, params, row_type, const_name, args,
-                row_type, scans,
+                func_name, params, row_type, const_name, args, row_type, scans,
             ));
         }
         QueryCommand::Many => {
@@ -195,8 +197,7 @@ fn generate_query_function(query: &QueryDef) -> String {
 \t\titems = append(items, i)
 \t}}
 \treturn items, rows.Err()\n}}",
-                func_name, params, row_type, const_name, args,
-                row_type, row_type, scans,
+                func_name, params, row_type, const_name, args, row_type, row_type, scans,
             ));
         }
         QueryCommand::Exec => {
@@ -216,8 +217,7 @@ fn generate_query_function(query: &QueryDef) -> String {
 \t\treturn nil, err
 \t}}
 \treturn &{}{{RowsAffected: tag.RowsAffected()}}, nil\n}}",
-                func_name, params, result_type, const_name, args,
-                result_type,
+                func_name, params, result_type, const_name, args, result_type,
             ));
         }
     }
@@ -299,7 +299,10 @@ impl DriverGenerator for PgxGenerator {
 
         let mut grouped: BTreeMap<String, Vec<&QueryDef>> = BTreeMap::new();
         for query in &ir.queries {
-            grouped.entry(query.source_file.clone()).or_default().push(query);
+            grouped
+                .entry(query.source_file.clone())
+                .or_default()
+                .push(query);
         }
         for (source_file, queries) in &grouped {
             let basename = Path::new(source_file)
@@ -331,7 +334,11 @@ mod tests {
         let queries = parser
             .parse_queries(queries_sql, &tables, &enums, "queries/users.sql")
             .unwrap();
-        SqlcxIR { tables, queries, enums }
+        SqlcxIR {
+            tables,
+            queries,
+            enums,
+        }
     }
 
     #[test]

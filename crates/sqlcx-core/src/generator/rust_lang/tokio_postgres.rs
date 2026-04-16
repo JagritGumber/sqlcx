@@ -14,7 +14,9 @@ fn rust_type(sql_type: &SqlType) -> String {
         return format!("Vec<{}>", rust_type(elem));
     }
     match sql_type.category {
-        SqlTypeCategory::String | SqlTypeCategory::Uuid | SqlTypeCategory::Enum => "String".to_string(),
+        SqlTypeCategory::String | SqlTypeCategory::Uuid | SqlTypeCategory::Enum => {
+            "String".to_string()
+        }
         SqlTypeCategory::Number => number_type(&sql_type.raw),
         SqlTypeCategory::Boolean => "bool".to_string(),
         SqlTypeCategory::Date => date_type(&sql_type.raw),
@@ -28,8 +30,11 @@ fn number_type(raw: &str) -> String {
     let upper = raw.to_uppercase();
     if upper.contains("BIGINT") || upper.contains("BIGSERIAL") {
         "i64".to_string()
-    } else if upper.contains("REAL") || upper.contains("FLOAT") || upper.contains("DOUBLE")
-        || upper.contains("DECIMAL") || upper.contains("NUMERIC")
+    } else if upper.contains("REAL")
+        || upper.contains("FLOAT")
+        || upper.contains("DOUBLE")
+        || upper.contains("DECIMAL")
+        || upper.contains("NUMERIC")
     {
         "f64".to_string()
     } else {
@@ -113,7 +118,10 @@ fn generate_query_function(query: &QueryDef) -> String {
 
     let mut parts: Vec<String> = Vec::new();
 
-    parts.push(format!("pub const {}: &str = {:?};", sql_const_name, query.sql));
+    parts.push(format!(
+        "pub const {}: &str = {:?};",
+        sql_const_name, query.sql
+    ));
 
     let row_struct = generate_row_struct(query);
     if !row_struct.is_empty() {
@@ -130,7 +138,11 @@ fn generate_query_function(query: &QueryDef) -> String {
     let params_array = if query.params.is_empty() {
         "&[]".to_string()
     } else {
-        let args: Vec<String> = query.params.iter().map(|p| format!("&{}", p.name)).collect();
+        let args: Vec<String> = query
+            .params
+            .iter()
+            .map(|p| format!("&{}", p.name))
+            .collect();
         format!("&[{}]", args.join(", "))
     };
 
@@ -209,7 +221,10 @@ impl DriverGenerator for TokioPostgresGenerator {
         let mut grouped: std::collections::BTreeMap<String, Vec<&QueryDef>> =
             std::collections::BTreeMap::new();
         for query in &ir.queries {
-            grouped.entry(query.source_file.clone()).or_default().push(query);
+            grouped
+                .entry(query.source_file.clone())
+                .or_default()
+                .push(query);
         }
         for (source_file, queries) in &grouped {
             let basename = Path::new(source_file)
@@ -242,7 +257,11 @@ mod tests {
         let queries = parser
             .parse_queries(queries_sql, &tables, &enums, "queries/users.sql")
             .unwrap();
-        SqlcxIR { tables, queries, enums }
+        SqlcxIR {
+            tables,
+            queries,
+            enums,
+        }
     }
 
     #[test]

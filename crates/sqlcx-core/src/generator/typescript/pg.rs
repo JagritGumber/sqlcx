@@ -1,6 +1,5 @@
 // pg (node-postgres) driver generator
 
-use std::collections::HashMap;
 use std::path::Path;
 
 use crate::error::Result;
@@ -79,7 +78,10 @@ fn generate_query_function(query: &QueryDef) -> String {
     let params_interface = generate_params_type(query);
     let has_params = !query.params.is_empty();
     let params_type_name = format!("{}Params", pascal_case(&query.name));
-    let sql_const = format!("export const {fn_name}Sql = {};", json_stringify(&query.sql));
+    let sql_const = format!(
+        "export const {fn_name}Sql = {};",
+        json_stringify(&query.sql)
+    );
 
     let params_sig = if has_params {
         format!(", params: {params_type_name}")
@@ -198,9 +200,13 @@ impl DriverGenerator for PgGenerator {
         });
 
         // Group queries by source_file → one .queries.ts per file
-        let mut grouped: std::collections::BTreeMap<String, Vec<&QueryDef>> = std::collections::BTreeMap::new();
+        let mut grouped: std::collections::BTreeMap<String, Vec<&QueryDef>> =
+            std::collections::BTreeMap::new();
         for query in &ir.queries {
-            grouped.entry(query.source_file.clone()).or_default().push(query);
+            grouped
+                .entry(query.source_file.clone())
+                .or_default()
+                .push(query);
         }
         for (source_file, queries) in &grouped {
             let basename = Path::new(source_file)
@@ -258,7 +264,10 @@ mod tests {
         let ir = parse_fixture_ir();
         let gen = PgGenerator;
         let files = gen.generate(&ir).unwrap();
-        let query_file = files.iter().find(|f| f.path.ends_with(".queries.ts")).unwrap();
+        let query_file = files
+            .iter()
+            .find(|f| f.path.ends_with(".queries.ts"))
+            .unwrap();
         assert!(query_file.content.contains("export async function getUser"));
         insta::assert_snapshot!("pg_queries", query_file.content);
     }

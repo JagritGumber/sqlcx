@@ -128,7 +128,15 @@ fn collect_imports(ir: &SqlcxIR, overrides: &Overrides) -> BTreeSet<String> {
 
     for table in &ir.tables {
         for col in &table.columns {
-            collect_type_imports(&col.sql_type, overrides, &mut needs_datetime, &mut needs_time, &mut needs_date, &mut needs_any, &mut needs_literal);
+            collect_type_imports(
+                &col.sql_type,
+                overrides,
+                &mut needs_datetime,
+                &mut needs_time,
+                &mut needs_date,
+                &mut needs_any,
+                &mut needs_literal,
+            );
         }
     }
 
@@ -188,7 +196,15 @@ fn collect_type_imports(
     }
 
     if let Some(elem) = &sql_type.element_type {
-        collect_type_imports(elem, overrides, needs_datetime, needs_time, needs_date, needs_any, needs_literal);
+        collect_type_imports(
+            elem,
+            overrides,
+            needs_datetime,
+            needs_time,
+            needs_date,
+            needs_any,
+            needs_literal,
+        );
         return;
     }
 
@@ -215,7 +231,7 @@ fn collect_type_imports(
 /// Sanitize an enum value into a valid Python identifier.
 /// "in-progress" → "IN_PROGRESS", "class" → "CLASS_"
 fn sanitize_variant(v: &str) -> String {
-    let upper = v.to_uppercase().replace('-', "_").replace(' ', "_");
+    let upper = v.to_uppercase().replace(['-', ' '], "_");
     // Prefix with underscore if starts with digit
     let safe = if upper.starts_with(|c: char| c.is_ascii_digit()) {
         format!("_{}", upper)
@@ -224,9 +240,9 @@ fn sanitize_variant(v: &str) -> String {
     };
     // Append underscore if it's a Python keyword
     match safe.as_str() {
-        "FALSE" | "TRUE" | "NONE" | "AND" | "OR" | "NOT" | "IS" | "IN" | "IF" | "ELSE"
-        | "FOR" | "WHILE" | "CLASS" | "DEF" | "RETURN" | "IMPORT" | "FROM" | "AS" | "WITH"
-        | "YIELD" | "BREAK" | "CONTINUE" | "PASS" | "RAISE" | "TRY" | "EXCEPT" | "FINALLY" => {
+        "FALSE" | "TRUE" | "NONE" | "AND" | "OR" | "NOT" | "IS" | "IN" | "IF" | "ELSE" | "FOR"
+        | "WHILE" | "CLASS" | "DEF" | "RETURN" | "IMPORT" | "FROM" | "AS" | "WITH" | "YIELD"
+        | "BREAK" | "CONTINUE" | "PASS" | "RAISE" | "TRY" | "EXCEPT" | "FINALLY" => {
             format!("{}_", safe)
         }
         _ => safe,
@@ -243,11 +259,7 @@ fn generate_enum(enum_def: &EnumDef) -> String {
             format!("    {} = \"{}\"", variant_name, escape_string(v))
         })
         .collect();
-    format!(
-        "class {}(str, Enum):\n{}",
-        name,
-        variants.join("\n")
-    )
+    format!("class {}(str, Enum):\n{}", name, variants.join("\n"))
 }
 
 fn generate_select_model(table: &crate::ir::TableDef, overrides: &Overrides) -> String {

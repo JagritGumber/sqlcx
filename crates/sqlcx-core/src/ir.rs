@@ -158,10 +158,7 @@ mod tests {
         let ir = SqlcxIR {
             tables: vec![TableDef {
                 name: "users".to_string(),
-                columns: vec![
-                    make_column("id", false),
-                    make_column("email", false),
-                ],
+                columns: vec![make_column("id", false), make_column("email", false)],
                 primary_key: vec!["id".to_string()],
                 unique_constraints: vec![vec!["email".to_string()]],
             }],
@@ -233,7 +230,10 @@ mod tests {
 
         // primaryKey not primary_key
         assert!(v.get("primaryKey").is_some(), "expected 'primaryKey' key");
-        assert!(v.get("primary_key").is_none(), "unexpected 'primary_key' key");
+        assert!(
+            v.get("primary_key").is_none(),
+            "unexpected 'primary_key' key"
+        );
 
         // uniqueConstraints not unique_constraints
         assert!(
@@ -244,6 +244,9 @@ mod tests {
         // hasDefault not has_default
         let col = &v["columns"][0];
         assert!(col.get("hasDefault").is_some(), "expected 'hasDefault' key");
-        assert!(col.get("has_default").is_none(), "unexpected 'has_default' key");
+        assert!(
+            col.get("has_default").is_none(),
+            "unexpected 'has_default' key"
+        );
     }
 }

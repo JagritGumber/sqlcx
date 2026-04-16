@@ -5,11 +5,10 @@ use regex::Regex;
 
 use crate::annotations::extract_annotations;
 use crate::error::Result;
-use crate::ir::{
-    ColumnDef, EnumDef, QueryDef, SqlType, SqlTypeCategory, TableDef,
-};
+use crate::ir::{ColumnDef, EnumDef, QueryDef, SqlType, SqlTypeCategory, TableDef};
 use crate::parser::{
-    build_params, make_unknown_column, split_column_defs, split_query_blocks, DatabaseParser,
+    build_params, ensure_supported_select_expr, make_unknown_column, split_column_defs,
+    split_query_blocks, DatabaseParser,
 };
 
 // ── Static regex patterns ────────────────────────────────────────────────────
@@ -23,8 +22,7 @@ static ENUM_VAL_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"'([^']*)'").
 static TINYINT_BOOL_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"(?i)^TINYINT\s*\(\s*1\s*\)").unwrap());
 
-static BASE_TYPE_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(?i)^(\w+)").unwrap());
+static BASE_TYPE_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?i)^(\w+)").unwrap());
 
 static CONSTRAINT_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"(?i)^(PRIMARY\s+KEY|CONSTRAINT|UNIQUE|CHECK|FOREIGN\s+KEY|KEY\s+)").unwrap()
@@ -39,17 +37,14 @@ static ENUM_COL_RE: LazyLock<Regex> =
 static COL_TYPE_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"(?i)^(\w+(?:\s*\([^)]*\))?)").unwrap());
 
-static NOT_NULL_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(?i)\bNOT\s+NULL\b").unwrap());
+static NOT_NULL_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?i)\bNOT\s+NULL\b").unwrap());
 
-static DEFAULT_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(?i)\bDEFAULT\b").unwrap());
+static DEFAULT_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?i)\bDEFAULT\b").unwrap());
 
 static PK_INLINE_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"(?i)\bPRIMARY\s+KEY\b").unwrap());
 
-static UNIQUE_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(?i)\bUNIQUE\b").unwrap());
+static UNIQUE_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?i)\bUNIQUE\b").unwrap());
 
 static AUTO_INC_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"(?i)\bAUTO_INCREMENT\b").unwrap());
@@ -65,15 +60,12 @@ static TABLE_RE: LazyLock<Regex> = LazyLock::new(|| {
 });
 
 static TABLE_RE_FALLBACK: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(
-        r"(?is)CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?(?:`?(\w+)`?)\s*\(([\s\S]*?)\)\s*;",
-    )
-    .unwrap()
+    Regex::new(r"(?is)CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?(?:`?(\w+)`?)\s*\(([\s\S]*?)\)\s*;")
+        .unwrap()
 });
 
-static TABLE_PK_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"(?i)^PRIMARY\s+KEY\s*\(\s*([\w\s,`]+)\s*\)").unwrap()
-});
+static TABLE_PK_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?i)^PRIMARY\s+KEY\s*\(\s*([\w\s,`]+)\s*\)").unwrap());
 
 static INSERT_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(
@@ -92,8 +84,7 @@ static WHERE_PARAM_RE: LazyLock<Regex> = LazyLock::new(|| {
 static FROM_TABLE_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"(?i)(?:FROM|INTO|UPDATE)\s+`?(\w+)`?").unwrap());
 
-static SELECT_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(?i)^\s*SELECT\b").unwrap());
+static SELECT_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?i)^\s*SELECT\b").unwrap());
 
 static SELECT_COLS_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"(?i)SELECT\s+([\s\S]+?)\s+FROM\b").unwrap());
@@ -448,34 +439,39 @@ fn find_from_table<'a>(sql: &str, tables: &'a [TableDef]) -> Option<&'a TableDef
     tables.iter().find(|t| t.name == table_name)
 }
 
-fn resolve_return_columns(sql: &str, table: Option<&TableDef>) -> Vec<ColumnDef> {
+fn resolve_return_columns(
+    sql: &str,
+    table: Option<&TableDef>,
+    source_file: &str,
+) -> Result<Vec<ColumnDef>> {
     if !SELECT_RE.is_match(sql) {
-        return Vec::new();
+        return Ok(Vec::new());
     }
 
     let Some(cap) = SELECT_COLS_RE.captures(sql) else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     let cols_part = cap[1].trim();
 
     if cols_part == "*" {
-        return table.map(|t| t.columns.clone()).unwrap_or_default();
+        return Ok(table.map(|t| t.columns.clone()).unwrap_or_default());
     }
 
     let Some(table) = table else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
 
     let col_names: Vec<&str> = cols_part.split(',').map(|s| s.trim()).collect();
 
     col_names
         .iter()
-        .map(|&col_expr| {
+        .map(|&col_expr| -> Result<ColumnDef> {
+            ensure_supported_select_expr(col_expr, source_file)?;
             let expr_lower = col_expr.to_lowercase();
             if let Some(alias_cap) = ALIAS_RE.captures(&expr_lower) {
                 let actual = &alias_cap[1];
                 let alias = alias_cap[2].to_string();
-                table
+                Ok(table
                     .columns
                     .iter()
                     .find(|c| c.name == actual)
@@ -484,15 +480,15 @@ fn resolve_return_columns(sql: &str, table: Option<&TableDef>) -> Vec<ColumnDef>
                         col.alias = Some(alias);
                         col
                     })
-                    .unwrap_or_else(|| make_unknown_column(actual))
+                    .unwrap_or_else(|| make_unknown_column(actual)))
             } else {
                 let name = expr_lower.trim_matches('`');
-                table
+                Ok(table
                     .columns
                     .iter()
                     .find(|c| c.name == name)
                     .cloned()
-                    .unwrap_or_else(|| make_unknown_column(name))
+                    .unwrap_or_else(|| make_unknown_column(name)))
             }
         })
         .collect()
@@ -505,6 +501,12 @@ pub struct MySqlParser;
 impl MySqlParser {
     pub fn new() -> Self {
         Self
+    }
+}
+
+impl Default for MySqlParser {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -531,7 +533,7 @@ impl DatabaseParser for MySqlParser {
             let param_indices = extract_param_indices(&block.sql);
             let inferred_cols = infer_param_columns(&block.sql);
             let params = build_params(&block.comments, table, param_indices, inferred_cols);
-            let returns = resolve_return_columns(&block.sql, table);
+            let returns = resolve_return_columns(&block.sql, table, source_file)?;
 
             let clean_sql = block
                 .sql
@@ -595,7 +597,11 @@ mod tests {
         let parser = MySqlParser::new();
         let (tables, _) = parser.parse_schema(SCHEMA_SQL).unwrap();
         let users = tables.iter().find(|t| t.name == "users").unwrap();
-        let active = users.columns.iter().find(|c| c.name == "is_active").unwrap();
+        let active = users
+            .columns
+            .iter()
+            .find(|c| c.name == "is_active")
+            .unwrap();
         assert_eq!(active.sql_type.category, SqlTypeCategory::Boolean);
     }
 
@@ -604,7 +610,11 @@ mod tests {
         let parser = MySqlParser::new();
         let (tables, _) = parser.parse_schema(SCHEMA_SQL).unwrap();
         let users = tables.iter().find(|t| t.name == "users").unwrap();
-        let prefs = users.columns.iter().find(|c| c.name == "preferences").unwrap();
+        let prefs = users
+            .columns
+            .iter()
+            .find(|c| c.name == "preferences")
+            .unwrap();
         assert_eq!(prefs.sql_type.category, SqlTypeCategory::Json);
         assert!(prefs.nullable);
     }
@@ -623,7 +633,11 @@ mod tests {
         let parser = MySqlParser::new();
         let (tables, _) = parser.parse_schema(SCHEMA_SQL).unwrap();
         let users = tables.iter().find(|t| t.name == "users").unwrap();
-        let full_name = users.columns.iter().find(|c| c.name == "full_name").unwrap();
+        let full_name = users
+            .columns
+            .iter()
+            .find(|c| c.name == "full_name")
+            .unwrap();
         assert!(full_name.has_default);
     }
 
@@ -668,7 +682,10 @@ mod tests {
         let queries = parser
             .parse_queries(QUERIES_SQL, &tables, &enums, "mysql_queries/users.sql")
             .unwrap();
-        let dr = queries.iter().find(|q| q.name == "ListUsersByDateRange").unwrap();
+        let dr = queries
+            .iter()
+            .find(|q| q.name == "ListUsersByDateRange")
+            .unwrap();
         assert_eq!(dr.params[0].name, "start_date");
         assert_eq!(dr.params[1].name, "end_date");
     }

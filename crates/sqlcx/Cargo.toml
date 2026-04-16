@@ -17,6 +17,9 @@ migrate = ["sqlcx-core/migrate"]
 sqlcx-core = { path = "../sqlcx-core" }
 clap = { version = "4", features = ["derive"] }
 glob = "0.3"
+schemars = "1"
+serde = { workspace = true }
+serde_json = { workspace = true }
 
 [dev-dependencies]
 tempfile = "3"

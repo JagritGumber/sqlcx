@@ -62,6 +62,7 @@ fn find_next_column_name<'a>(lines: &[&'a str], start: usize) -> Option<&'a str>
 }
 
 /// Split a string by commas, ignoring commas inside nested braces/parens.
+#[cfg(test)]
 fn split_top_level(s: &str) -> Vec<&str> {
     let mut parts = Vec::new();
     let mut depth = 0usize;
@@ -84,9 +85,7 @@ fn split_top_level(s: &str) -> Vec<&str> {
 
 fn parse_enum_values(inner: &str) -> Vec<String> {
     let re = Regex::new(r#""([^"]*?)""#).unwrap();
-    re.captures_iter(inner)
-        .map(|c| c[1].to_string())
-        .collect()
+    re.captures_iter(inner).map(|c| c[1].to_string()).collect()
 }
 
 // ── JSON shape parser ─────────────────────────────────────────────────────────
@@ -214,9 +213,7 @@ impl<'a> JsonParser<'a> {
     }
 
     fn skip_ws(&mut self) {
-        while self.pos < self.input.len()
-            && self.input.as_bytes()[self.pos].is_ascii_whitespace()
-        {
+        while self.pos < self.input.len() && self.input.as_bytes()[self.pos].is_ascii_whitespace() {
             self.pos += 1;
         }
     }
@@ -363,8 +360,7 @@ mod tests {
 
     #[test]
     fn extract_enum_annotation() {
-        let sql =
-            "-- @enum(\"draft\", \"published\", \"archived\")\nstatus TEXT NOT NULL";
+        let sql = "-- @enum(\"draft\", \"published\", \"archived\")\nstatus TEXT NOT NULL";
         let (_, ann) = extract_annotations(sql);
         let values = ann.enums.get("status").unwrap();
         assert_eq!(values, &vec!["draft", "published", "archived"]);
@@ -372,8 +368,7 @@ mod tests {
 
     #[test]
     fn extract_json_annotation() {
-        let sql =
-            "-- @json({ theme: string, notifications: boolean })\npreferences JSONB";
+        let sql = "-- @json({ theme: string, notifications: boolean })\npreferences JSONB";
         let (_, ann) = extract_annotations(sql);
         let shape = ann.json_shapes.get("preferences").unwrap();
         match shape {
@@ -387,8 +382,7 @@ mod tests {
 
     #[test]
     fn extract_param_override() {
-        let sql =
-            "-- @param $1 start_date\n-- @param $2 end_date\nSELECT * FROM users;";
+        let sql = "-- @param $1 start_date\n-- @param $2 end_date\nSELECT * FROM users;";
         let (_, ann) = extract_annotations(sql);
         assert_eq!(ann.param_overrides.get(&1), Some(&"start_date".to_string()));
         assert_eq!(ann.param_overrides.get(&2), Some(&"end_date".to_string()));
@@ -396,8 +390,7 @@ mod tests {
 
     #[test]
     fn strips_annotation_lines_from_sql() {
-        let sql =
-            "-- name: GetUser :one\n-- @param $1 user_id\nSELECT * FROM users WHERE id = $1;";
+        let sql = "-- name: GetUser :one\n-- @param $1 user_id\nSELECT * FROM users WHERE id = $1;";
         let (cleaned, _) = extract_annotations(sql);
         assert!(!cleaned.contains("@param"));
         assert!(!cleaned.contains("-- name:"));
@@ -428,13 +421,9 @@ mod tests {
 
     #[test]
     fn query_command_execresult() {
-        let sql =
-            "-- name: UpdateUser :execresult\nUPDATE users SET name = $1 WHERE id = $2;";
+        let sql = "-- name: UpdateUser :execresult\nUPDATE users SET name = $1 WHERE id = $2;";
         let (_, ann) = extract_annotations(sql);
-        assert_eq!(
-            ann.query_header.unwrap().command,
-            QueryCommand::ExecResult
-        );
+        assert_eq!(ann.query_header.unwrap().command, QueryCommand::ExecResult);
     }
 
     #[test]

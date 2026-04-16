@@ -52,7 +52,10 @@ fn format_timestamp(total_secs: u64) -> String {
     if m <= 2 {
         y += 1;
     }
-    format!("{:04}{:02}{:02}{:02}{:02}{:02}", y, m, d, hour, minute, second)
+    format!(
+        "{:04}{:02}{:02}{:02}{:02}{:02}",
+        y, m, d, hour, minute, second
+    )
 }
 
 #[cfg(test)]

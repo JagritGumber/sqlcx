@@ -108,18 +108,14 @@ fn generate_result_struct(query: &QueryDef) -> String {
 
 fn generate_query_function(query: &QueryDef) -> String {
     let fn_name = snake_case(&query.name);
-    let sql_const_name = format!(
-        "{}_SQL",
-        fn_name.to_uppercase()
-    );
+    let sql_const_name = format!("{}_SQL", fn_name.to_uppercase());
 
     let mut parts: Vec<String> = Vec::new();
 
     // SQL constant
     parts.push(format!(
         "pub const {}: &str = {:?};",
-        sql_const_name,
-        query.sql
+        sql_const_name, query.sql
     ));
 
     // Row struct (for :one and :many)

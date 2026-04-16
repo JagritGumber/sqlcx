@@ -1,19 +1,19 @@
-pub mod typebox;
+pub mod better_sqlite3;
 pub mod bun_sql;
+pub mod mysql2;
+pub mod pg;
+pub mod typebox;
 pub mod zod;
 pub mod zod_v3;
-pub mod pg;
-pub mod mysql2;
-pub mod better_sqlite3;
 
-use crate::error::{Result, SqlcxError};
 use crate::config::TargetConfig;
-use crate::generator::{GeneratedFile, LanguagePlugin, SchemaGenerator, DriverGenerator};
+use crate::error::{Result, SqlcxError};
+use crate::generator::{DriverGenerator, GeneratedFile, LanguagePlugin, SchemaGenerator};
 use crate::ir::SqlcxIR;
 
-use self::typebox::TypeBoxGenerator;
 use self::bun_sql::BunSqlGenerator;
 use self::pg::PgGenerator;
+use self::typebox::TypeBoxGenerator;
 
 pub struct TypeScriptPlugin {
     pub schema_name: String,
@@ -22,6 +22,8 @@ pub struct TypeScriptPlugin {
 
 impl TypeScriptPlugin {
     pub fn new(schema: &str, driver: &str) -> Result<Self> {
+        resolve_schema(schema)?;
+        resolve_driver(driver)?;
         Ok(Self {
             schema_name: schema.to_string(),
             driver_name: driver.to_string(),
@@ -69,10 +71,10 @@ impl LanguagePlugin for TypeScriptPlugin {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::collections::HashMap;
+    use crate::generator::LanguagePlugin;
     use crate::parser::postgres::PostgresParser;
     use crate::parser::DatabaseParser;
-    use crate::generator::LanguagePlugin;
+    use std::collections::HashMap;
 
     fn parse_fixture_ir() -> SqlcxIR {
         let schema_sql = include_str!("../../../../../tests/fixtures/schema.sql");
@@ -82,7 +84,11 @@ mod tests {
         let queries = parser
             .parse_queries(queries_sql, &tables, &enums, "queries/users.sql")
             .unwrap();
-        SqlcxIR { tables, queries, enums }
+        SqlcxIR {
+            tables,
+            queries,
+            enums,
+        }
     }
 
     #[test]

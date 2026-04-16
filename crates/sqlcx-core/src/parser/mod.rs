@@ -34,11 +34,24 @@ pub fn resolve_parser(name: &str) -> Result<Box<dyn DatabaseParser>> {
     }
 }
 
+pub(crate) fn ensure_supported_select_expr(expr: &str, source_file: &str) -> Result<()> {
+    let trimmed = expr.trim();
+    if trimmed.contains('.') {
+        return Err(crate::error::SqlcxError::ParseError {
+            file: source_file.to_string(),
+            message: format!(
+                "qualified select expressions are not supported yet: `{}`",
+                trimmed
+            ),
+        });
+    }
+    Ok(())
+}
+
 // ── Shared regex for split_query_blocks ──────────────────────────────────────
 
-static QUERY_HEADER_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"--\s*name:\s*(\w+)\s+:(one|many|execresult|exec)").unwrap()
-});
+static QUERY_HEADER_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"--\s*name:\s*(\w+)\s+:(one|many|execresult|exec)").unwrap());
 
 // ── Shared utilities ─────────────────────────────────────────────────────────
 

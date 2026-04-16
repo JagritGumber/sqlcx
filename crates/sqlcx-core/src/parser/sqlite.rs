@@ -5,17 +5,15 @@ use regex::Regex;
 
 use crate::annotations::extract_annotations;
 use crate::error::Result;
-use crate::ir::{
-    ColumnDef, EnumDef, QueryDef, SqlType, SqlTypeCategory, TableDef,
-};
+use crate::ir::{ColumnDef, EnumDef, QueryDef, SqlType, SqlTypeCategory, TableDef};
 use crate::parser::{
-    build_params, make_unknown_column, split_column_defs, split_query_blocks, DatabaseParser,
+    build_params, ensure_supported_select_expr, make_unknown_column, split_column_defs,
+    split_query_blocks, DatabaseParser,
 };
 
 // ── Static regex patterns ────────────────────────────────────────────────────
 
-static BASE_TYPE_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(?i)^(\w+)").unwrap());
+static BASE_TYPE_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?i)^(\w+)").unwrap());
 
 static CONSTRAINT_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"(?i)^(PRIMARY\s+KEY|CONSTRAINT|UNIQUE|CHECK|FOREIGN\s+KEY)").unwrap()
@@ -27,31 +25,25 @@ static COL_NAME_RE: LazyLock<Regex> =
 static COL_TYPE_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"(?i)^(\w+(?:\s*\([^)]*\))?)").unwrap());
 
-static NOT_NULL_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(?i)\bNOT\s+NULL\b").unwrap());
+static NOT_NULL_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?i)\bNOT\s+NULL\b").unwrap());
 
-static DEFAULT_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(?i)\bDEFAULT\b").unwrap());
+static DEFAULT_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?i)\bDEFAULT\b").unwrap());
 
 static PK_INLINE_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"(?i)\bPRIMARY\s+KEY\b").unwrap());
 
-static UNIQUE_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(?i)\bUNIQUE\b").unwrap());
+static UNIQUE_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?i)\bUNIQUE\b").unwrap());
 
 static AUTO_INC_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"(?i)\bAUTOINCREMENT\b").unwrap());
 
 static TABLE_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(
-        r"(?is)CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?(?:`?(\w+)`?)\s*\(([\s\S]*?)\)\s*;",
-    )
-    .unwrap()
+    Regex::new(r"(?is)CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?(?:`?(\w+)`?)\s*\(([\s\S]*?)\)\s*;")
+        .unwrap()
 });
 
-static TABLE_PK_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"(?i)^PRIMARY\s+KEY\s*\(\s*([\w\s,`]+)\s*\)").unwrap()
-});
+static TABLE_PK_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?i)^PRIMARY\s+KEY\s*\(\s*([\w\s,`]+)\s*\)").unwrap());
 
 static INSERT_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(
@@ -70,8 +62,7 @@ static WHERE_PARAM_RE: LazyLock<Regex> = LazyLock::new(|| {
 static FROM_TABLE_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"(?i)(?:FROM|INTO|UPDATE)\s+`?(\w+)`?").unwrap());
 
-static SELECT_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(?i)^\s*SELECT\b").unwrap());
+static SELECT_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?i)^\s*SELECT\b").unwrap());
 
 static SELECT_COLS_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"(?i)SELECT\s+([\s\S]+?)\s+FROM\b").unwrap());
@@ -321,8 +312,8 @@ fn infer_param_columns(sql: &str) -> HashMap<u32, String> {
 
     // WHERE/SET pattern: col = ? or col LIKE ?
     let sql_keywords: std::collections::HashSet<&str> = [
-        "not", "and", "or", "where", "set", "when", "then", "else", "case",
-        "between", "exists", "any", "all", "some", "having",
+        "not", "and", "or", "where", "set", "when", "then", "else", "case", "between", "exists",
+        "any", "all", "some", "having",
     ]
     .into_iter()
     .collect();
@@ -359,34 +350,39 @@ fn find_from_table<'a>(sql: &str, tables: &'a [TableDef]) -> Option<&'a TableDef
     tables.iter().find(|t| t.name == table_name)
 }
 
-fn resolve_return_columns(sql: &str, table: Option<&TableDef>) -> Vec<ColumnDef> {
+fn resolve_return_columns(
+    sql: &str,
+    table: Option<&TableDef>,
+    source_file: &str,
+) -> Result<Vec<ColumnDef>> {
     if !SELECT_RE.is_match(sql) {
-        return Vec::new();
+        return Ok(Vec::new());
     }
 
     let Some(cap) = SELECT_COLS_RE.captures(sql) else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     let cols_part = cap[1].trim();
 
     if cols_part == "*" {
-        return table.map(|t| t.columns.clone()).unwrap_or_default();
+        return Ok(table.map(|t| t.columns.clone()).unwrap_or_default());
     }
 
     let Some(table) = table else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
 
     let col_names: Vec<&str> = cols_part.split(',').map(|s| s.trim()).collect();
 
     col_names
         .iter()
-        .map(|&col_expr| {
+        .map(|&col_expr| -> Result<ColumnDef> {
+            ensure_supported_select_expr(col_expr, source_file)?;
             let expr_lower = col_expr.to_lowercase();
             if let Some(alias_cap) = ALIAS_RE.captures(&expr_lower) {
                 let actual = &alias_cap[1];
                 let alias = alias_cap[2].to_string();
-                table
+                Ok(table
                     .columns
                     .iter()
                     .find(|c| c.name == actual)
@@ -395,15 +391,15 @@ fn resolve_return_columns(sql: &str, table: Option<&TableDef>) -> Vec<ColumnDef>
                         col.alias = Some(alias);
                         col
                     })
-                    .unwrap_or_else(|| make_unknown_column(actual))
+                    .unwrap_or_else(|| make_unknown_column(actual)))
             } else {
                 let name = expr_lower.trim_matches('`');
-                table
+                Ok(table
                     .columns
                     .iter()
                     .find(|c| c.name == name)
                     .cloned()
-                    .unwrap_or_else(|| make_unknown_column(name))
+                    .unwrap_or_else(|| make_unknown_column(name)))
             }
         })
         .collect()
@@ -416,6 +412,12 @@ pub struct SqliteParser;
 impl SqliteParser {
     pub fn new() -> Self {
         Self
+    }
+}
+
+impl Default for SqliteParser {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -442,7 +444,7 @@ impl DatabaseParser for SqliteParser {
             let param_indices = extract_param_indices(&block.sql);
             let inferred_cols = infer_param_columns(&block.sql);
             let params = build_params(&block.comments, table, param_indices, inferred_cols);
-            let returns = resolve_return_columns(&block.sql, table);
+            let returns = resolve_return_columns(&block.sql, table, source_file)?;
 
             let clean_sql = block
                 .sql
@@ -474,8 +476,7 @@ mod tests {
     use crate::parser::DatabaseParser;
 
     const SCHEMA_SQL: &str = include_str!("../../../../tests/fixtures/sqlite_schema.sql");
-    const QUERIES_SQL: &str =
-        include_str!("../../../../tests/fixtures/sqlite_queries/users.sql");
+    const QUERIES_SQL: &str = include_str!("../../../../tests/fixtures/sqlite_queries/users.sql");
 
     #[test]
     fn parses_users_table() {
@@ -503,7 +504,11 @@ mod tests {
         let parser = SqliteParser::new();
         let (tables, _) = parser.parse_schema(SCHEMA_SQL).unwrap();
         let users = tables.iter().find(|t| t.name == "users").unwrap();
-        let active = users.columns.iter().find(|c| c.name == "is_active").unwrap();
+        let active = users
+            .columns
+            .iter()
+            .find(|c| c.name == "is_active")
+            .unwrap();
         assert_eq!(active.sql_type.category, SqlTypeCategory::Boolean);
     }
 
@@ -512,7 +517,11 @@ mod tests {
         let parser = SqliteParser::new();
         let (tables, _) = parser.parse_schema(SCHEMA_SQL).unwrap();
         let users = tables.iter().find(|t| t.name == "users").unwrap();
-        let created = users.columns.iter().find(|c| c.name == "created_at").unwrap();
+        let created = users
+            .columns
+            .iter()
+            .find(|c| c.name == "created_at")
+            .unwrap();
         assert_eq!(created.sql_type.category, SqlTypeCategory::Date);
     }
 

@@ -2,17 +2,24 @@
 mod migrate_cmd;
 
 use clap::{Parser, Subcommand};
+use schemars::schema_for;
+use serde::{Deserialize, Serialize};
 use sqlcx_core::{
     cache::{compute_hash, read_cache, write_cache, SqlFile},
-    config::load_config,
+    config::{load_config, SqlcxConfig, TargetConfig},
     generator::resolve_language,
+    generator::GeneratedFile,
     ir::SqlcxIR,
     parser::resolve_parser,
 };
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 #[derive(Parser)]
-#[command(name = "sqlcx", about = "SQL-first cross-language type-safe code generator")]
+#[command(
+    name = "sqlcx",
+    about = "SQL-first cross-language type-safe code generator"
+)]
 struct Cli {
     #[command(subcommand)]
     command: Commands,
@@ -49,10 +56,7 @@ fn run(cli: Cli) -> sqlcx_core::error::Result<()> {
         Commands::Generate => run_pipeline(true),
         Commands::Check => run_pipeline(false),
         Commands::Init => run_init(),
-        Commands::Schema => {
-            eprintln!("error: schema command not yet implemented");
-            std::process::exit(1);
-        }
+        Commands::Schema => run_schema(),
         #[cfg(feature = "migrate")]
         Commands::Migrate { cmd } => {
             let cwd = std::env::current_dir()?;
@@ -163,7 +167,7 @@ fn run_pipeline(write_output: bool) -> sqlcx_core::error::Result<()> {
     let queries_dir = sql_dir.join("queries");
     let (schema_files, query_files) = partition_sql_files(&queries_dir, &sql_file_structs);
 
-    let hash = compute_hash(&sql_file_structs);
+    let hash = compute_hash(&sql_file_structs, &config.parser);
     let cache_dir = cwd.join(".sqlcx");
 
     let ir = if let Some(cached) = read_cache(&cache_dir, &hash)? {
@@ -176,16 +180,20 @@ fn run_pipeline(write_output: bool) -> sqlcx_core::error::Result<()> {
         ir
     };
 
+    let validated_targets = validate_targets(&config)?;
+
     if write_output {
-        for target in &config.targets {
-            let mut merged_target = target.clone();
-            for (k, v) in &config.overrides {
-                merged_target.overrides.entry(k.clone()).or_insert(v.clone());
-            }
-            let plugin = resolve_language(&merged_target.language, &merged_target.schema, &merged_target.driver)?;
+        let mut outputs_by_dir: BTreeMap<PathBuf, Vec<GeneratedFile>> = BTreeMap::new();
+
+        for (target, merged_target, plugin) in validated_targets {
             let files = plugin.generate(&ir, &merged_target)?;
             let out_dir = resolve_path(&cwd, &target.out);
+            outputs_by_dir.entry(out_dir).or_default().extend(files);
+        }
+
+        for (out_dir, files) in outputs_by_dir {
             std::fs::create_dir_all(&out_dir)?;
+            sync_generated_files(&out_dir, &files)?;
             for file in files {
                 let dest = out_dir.join(&file.path);
                 if let Some(parent) = dest.parent() {
@@ -197,10 +205,82 @@ fn run_pipeline(write_output: bool) -> sqlcx_core::error::Result<()> {
         }
         eprintln!("Done.");
     } else {
-        eprintln!("Check passed — {} tables, {} queries, {} enums",
-            ir.tables.len(), ir.queries.len(), ir.enums.len());
+        eprintln!(
+            "Check passed — {} tables, {} queries, {} enums",
+            ir.tables.len(),
+            ir.queries.len(),
+            ir.enums.len()
+        );
     }
 
+    Ok(())
+}
+
+fn run_schema() -> sqlcx_core::error::Result<()> {
+    let schema = schema_for!(SqlcxConfig);
+    println!("{}", serde_json::to_string_pretty(&schema)?);
+    Ok(())
+}
+
+fn validate_targets(config: &SqlcxConfig) -> sqlcx_core::error::Result<Vec<ValidatedTarget>> {
+    let mut validated = Vec::with_capacity(config.targets.len());
+    for target in &config.targets {
+        let mut merged_target = target.clone();
+        for (k, v) in &config.overrides {
+            merged_target
+                .overrides
+                .entry(k.clone())
+                .or_insert(v.clone());
+        }
+        let plugin = resolve_language(
+            &merged_target.language,
+            &merged_target.schema,
+            &merged_target.driver,
+        )?;
+        validated.push((target.clone(), merged_target, plugin));
+    }
+    Ok(validated)
+}
+
+#[derive(Serialize, Deserialize, Default)]
+struct OutputManifest {
+    files: Vec<String>,
+}
+
+type ValidatedTarget = (
+    TargetConfig,
+    TargetConfig,
+    Box<dyn sqlcx_core::generator::LanguagePlugin>,
+);
+
+fn sync_generated_files(
+    out_dir: &Path,
+    files: &[sqlcx_core::generator::GeneratedFile],
+) -> sqlcx_core::error::Result<()> {
+    let manifest_path = out_dir.join(".sqlcx-manifest.json");
+    let previous = if manifest_path.exists() {
+        serde_json::from_str::<OutputManifest>(&std::fs::read_to_string(&manifest_path)?)
+            .unwrap_or_default()
+    } else {
+        OutputManifest::default()
+    };
+
+    let current: std::collections::BTreeSet<String> =
+        files.iter().map(|file| file.path.clone()).collect();
+
+    for stale in previous.files {
+        if !current.contains(&stale) {
+            let stale_path = out_dir.join(&stale);
+            if stale_path.exists() {
+                std::fs::remove_file(&stale_path)?;
+            }
+        }
+    }
+
+    let manifest = OutputManifest {
+        files: current.into_iter().collect(),
+    };
+    std::fs::write(&manifest_path, serde_json::to_string_pretty(&manifest)?)?;
     Ok(())
 }
 

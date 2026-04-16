@@ -84,9 +84,9 @@ fn to_psycopg_params(sql: &str, params: &[crate::ir::ParamDef]) -> String {
     let mut chars = sql.chars().peekable();
     while let Some(c) = chars.next() {
         if c == '$' {
-            if chars.peek().map_or(false, |ch| ch.is_ascii_digit()) {
+            if chars.peek().is_some_and(|ch| ch.is_ascii_digit()) {
                 let mut num_str = String::new();
-                while chars.peek().map_or(false, |ch| ch.is_ascii_digit()) {
+                while chars.peek().is_some_and(|ch| ch.is_ascii_digit()) {
                     num_str.push(chars.next().unwrap());
                 }
                 let idx: u32 = num_str.parse().unwrap_or(0);
@@ -122,7 +122,11 @@ fn generate_query_function(query: &QueryDef) -> String {
     let params_class = generate_params_class(query);
     let has_params = !query.params.is_empty();
     let params_type_name = format!("{}Params", pascal_case(&query.name));
-    let sql_const = format!("{}_SQL = \"{}\"", fn_name.to_uppercase(), escape_sql(&query.sql, &query.params));
+    let sql_const = format!(
+        "{}_SQL = \"{}\"",
+        fn_name.to_uppercase(),
+        escape_sql(&query.sql, &query.params)
+    );
 
     let params_sig = if has_params {
         format!(", params: {}", params_type_name)
@@ -166,14 +170,16 @@ fn generate_query_function(query: &QueryDef) -> String {
             "None".to_string(),
             format!(
                 "    conn.execute({}_SQL, {})",
-                fn_name.to_uppercase(), params_arg
+                fn_name.to_uppercase(),
+                params_arg
             ),
         ),
         QueryCommand::ExecResult => (
             "int".to_string(),
             format!(
                 "    cur = conn.execute({}_SQL, {})\n    return cur.rowcount",
-                fn_name.to_uppercase(), params_arg
+                fn_name.to_uppercase(),
+                params_arg
             ),
         ),
     };
@@ -227,7 +233,10 @@ impl DriverGenerator for PsycopgGenerator {
 
         let mut grouped: BTreeMap<String, Vec<&QueryDef>> = BTreeMap::new();
         for query in &ir.queries {
-            grouped.entry(query.source_file.clone()).or_default().push(query);
+            grouped
+                .entry(query.source_file.clone())
+                .or_default()
+                .push(query);
         }
         for (source_file, queries) in &grouped {
             let basename = Path::new(source_file)
@@ -260,7 +269,11 @@ mod tests {
         let queries = parser
             .parse_queries(queries_sql, &tables, &enums, "queries/users.sql")
             .unwrap();
-        SqlcxIR { tables, queries, enums }
+        SqlcxIR {
+            tables,
+            queries,
+            enums,
+        }
     }
 
     #[test]

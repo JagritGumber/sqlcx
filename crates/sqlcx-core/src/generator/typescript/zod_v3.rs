@@ -18,7 +18,9 @@ fn json_shape_to_zod(shape: &JsonShape) -> String {
             entries.sort_by_key(|(k, _)| k.as_str());
             let inner = entries
                 .iter()
-                .map(|(key, val)| format!("  \"{}\": {}", escape_string(key), json_shape_to_zod(val)))
+                .map(|(key, val)| {
+                    format!("  \"{}\": {}", escape_string(key), json_shape_to_zod(val))
+                })
                 .collect::<Vec<_>>()
                 .join(",\n");
             format!("z.object({{\n{}\n}})", inner)
@@ -114,7 +116,13 @@ fn object_body(
 ) -> String {
     let fields = columns
         .iter()
-        .map(|col| format!("  \"{}\": {}", escape_string(&col.name), mapper(col, overrides)))
+        .map(|col| {
+            format!(
+                "  \"{}\": {}",
+                escape_string(&col.name),
+                mapper(col, overrides)
+            )
+        })
         .collect::<Vec<_>>()
         .join(",\n");
     format!("{{\n{}\n}}", fields)
@@ -150,7 +158,10 @@ fn generate_insert_schema(table: &crate::ir::TableDef, overrides: &Overrides) ->
 }
 
 fn generate_type_alias(name: &str, schema_var_name: &str) -> String {
-    format!("export type {} = z.infer<typeof {}>;", name, schema_var_name)
+    format!(
+        "export type {} = z.infer<typeof {}>;",
+        name, schema_var_name
+    )
 }
 
 impl ZodV3Generator {
@@ -207,7 +218,11 @@ mod tests {
         let schema_sql = include_str!("../../../../../tests/fixtures/schema.sql");
         let parser = PostgresParser::new();
         let (tables, enums) = parser.parse_schema(schema_sql).unwrap();
-        SqlcxIR { tables, queries: vec![], enums }
+        SqlcxIR {
+            tables,
+            queries: vec![],
+            enums,
+        }
     }
 
     #[test]

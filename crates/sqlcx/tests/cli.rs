@@ -320,7 +320,10 @@ fn cli_generate_prunes_stale_query_files() {
 }
 
 #[test]
-fn cli_generate_rejects_qualified_selects() {
+fn cli_generate_accepts_multi_table_inner_join() {
+    // JOIN queries with qualified columns now succeed via the multi-table
+    // resolver path. Single-table qualified selects are still rejected —
+    // that's a separate effort (PR #32).
     let dir = tempfile::tempdir().unwrap();
     let sql_dir = dir.path().join("sql");
     let queries_dir = sql_dir.join("queries");
@@ -350,9 +353,11 @@ fn cli_generate_rejects_qualified_selects() {
         .output()
         .unwrap();
 
-    assert!(!output.status.success());
-    assert!(String::from_utf8_lossy(&output.stderr)
-        .contains("qualified select expressions are not supported yet"));
+    assert!(
+        output.status.success(),
+        "expected success, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
 }
 
 #[test]

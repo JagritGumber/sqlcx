@@ -1,0 +1,59 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: -D warnings
+
+jobs:
+  ci:
+    name: build / test / lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+          components: rustfmt, clippy
+
+      - name: Install Node.js (for TS typecheck integration tests)
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: |
+            tests/typecheck/package-lock.json
+            tests/typecheck-zod3/package-lock.json
+
+      - name: Install TS typecheck fixture dependencies
+        run: |
+          npm --prefix tests/typecheck ci
+          npm --prefix tests/typecheck-zod3 ci
+
+      - name: Install TypeScript globally (so npx tsc resolves from PATH)
+        run: npm install -g typescript@5
+
+      - name: cargo fmt --check
+        run: cargo fmt --all -- --check
+
+      - name: cargo build
+        run: cargo build --workspace --all-targets
+
+      - name: cargo test
+        run: cargo test --workspace
+        env:
+          # Snapshot tests fail loudly on mismatch (don't accept silently).
+          # Values are quoted so YAML does not coerce `no` to the boolean
+          # false — insta needs the literal string "no" to trigger the
+          # "never update snapshots, fail on mismatch" behavior.
+          INSTA_UPDATE: "no"
+          INSTA_FORCE_PASS: "0"
+
+      - name: cargo clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings

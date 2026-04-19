@@ -1,3 +1,4 @@
+pub mod common;
 pub mod serde_structs;
 pub mod sqlx_driver;
 pub mod tokio_postgres;

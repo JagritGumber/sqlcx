@@ -88,7 +88,8 @@ static TABLE_REF_RE: LazyLock<Regex> = LazyLock::new(|| {
 
 // Match unsupported join flavors so we can reject with a clear message.
 static UNSUPPORTED_JOIN_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"(?i)\b(LEFT|RIGHT|FULL|OUTER|NATURAL|CROSS)\s+(OUTER\s+)?JOIN\b|\bUSING\s*\(").unwrap()
+    Regex::new(r"(?i)\b(LEFT|RIGHT|FULL|OUTER|NATURAL|CROSS)\s+(OUTER\s+)?JOIN\b|\bUSING\s*\(")
+        .unwrap()
 });
 
 /// Walk a query's FROM clause and return the alias → table mapping.
@@ -188,25 +189,26 @@ pub fn resolve_multi_table_select_column(
     // Split optional `AS <alias>` suffix (case-insensitive).
     let (lhs, alias) = split_as_alias(trimmed);
 
-    let (qualifier, col_name) =
-        lhs.split_once('.').ok_or_else(|| SqlcxError::ParseError {
-            file: source_file.to_string(),
-            message: format!(
-                "multi-table resolver requires qualified columns, got `{}`",
-                trimmed
-            ),
-        })?;
+    let (qualifier, col_name) = lhs.split_once('.').ok_or_else(|| SqlcxError::ParseError {
+        file: source_file.to_string(),
+        message: format!(
+            "multi-table resolver requires qualified columns, got `{}`",
+            trimmed
+        ),
+    })?;
 
     let qualifier = qualifier.trim();
     let col_name = col_name.trim();
 
-    let table = *alias_map.lookup(qualifier).ok_or_else(|| SqlcxError::ParseError {
-        file: source_file.to_string(),
-        message: format!(
-            "unknown table qualifier `{}` in expression `{}` — not in FROM/JOIN clause",
-            qualifier, trimmed
-        ),
-    })?;
+    let table = *alias_map
+        .lookup(qualifier)
+        .ok_or_else(|| SqlcxError::ParseError {
+            file: source_file.to_string(),
+            message: format!(
+                "unknown table qualifier `{}` in expression `{}` — not in FROM/JOIN clause",
+                qualifier, trimmed
+            ),
+        })?;
 
     let column = table
         .columns
@@ -214,10 +216,7 @@ pub fn resolve_multi_table_select_column(
         .find(|c| c.name.eq_ignore_ascii_case(col_name))
         .ok_or_else(|| SqlcxError::ParseError {
             file: source_file.to_string(),
-            message: format!(
-                "column `{}` not found on table `{}`",
-                col_name, table.name
-            ),
+            message: format!("column `{}` not found on table `{}`", col_name, table.name),
         })?;
 
     Ok(ColumnDef {
@@ -232,10 +231,12 @@ pub fn resolve_multi_table_select_column(
 
 fn split_as_alias(expr: &str) -> (&str, Option<&str>) {
     let lower = expr.to_lowercase();
-    // Match ` AS <ident>` or ` <ident>` at end — but for safety, only accept `AS`.
+    // Locate the ` AS ` separator case-insensitively, then skip exactly
+    // 4 bytes (space + A + S + space) in the original string so mixed-case
+    // forms like `As`, `aS`, `AS`, `as` are all handled.
     if let Some(idx) = lower.rfind(" as ") {
-        let (lhs, rhs) = expr.split_at(idx);
-        let alias = rhs.trim_start_matches(|c: char| c.is_whitespace()).trim_start_matches("AS").trim_start_matches("as").trim();
+        let lhs = &expr[..idx];
+        let alias = expr[idx + 4..].trim();
         if !alias.is_empty() && alias.chars().all(|c| c.is_alphanumeric() || c == '_') {
             return (lhs.trim(), Some(alias));
         }
@@ -357,6 +358,17 @@ mod tests {
         assert_eq!(col.name, "id");
         assert_eq!(col.alias.as_deref(), Some("user_id"));
         assert_eq!(col.source_table.as_deref(), Some("users"));
+    }
+
+    #[test]
+    fn resolve_multi_table_with_mixed_case_as() {
+        let tables = vec![table("users", &["id"])];
+        let map = parse_join_clauses("SELECT * FROM users u", &tables, "q.sql").unwrap();
+        for form in ["u.id As user_id", "u.id aS user_id", "u.id as user_id"] {
+            let col = resolve_multi_table_select_column(form, &map, "q.sql").unwrap();
+            assert_eq!(col.name, "id", "form={form}");
+            assert_eq!(col.alias.as_deref(), Some("user_id"), "form={form}");
+        }
     }
 
     #[test]

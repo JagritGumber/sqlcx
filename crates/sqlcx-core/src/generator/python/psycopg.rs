@@ -4,9 +4,7 @@ use std::collections::BTreeMap;
 use std::path::Path;
 
 use crate::error::Result;
-use crate::generator::python::common::{
-    escape_sql, generate_params_class, generate_row_class,
-};
+use crate::generator::python::common::{escape_sql, generate_params_class, generate_row_class};
 use crate::generator::{DriverGenerator, GeneratedFile};
 use crate::ir::{ParamDef, QueryCommand, QueryDef, SqlcxIR};
 use crate::utils::{pascal_case, snake_case};

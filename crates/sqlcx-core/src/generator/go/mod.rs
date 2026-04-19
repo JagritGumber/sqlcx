@@ -1,3 +1,4 @@
+pub mod common;
 pub mod database_sql;
 pub mod pgx;
 pub mod structs;

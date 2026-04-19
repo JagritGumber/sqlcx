@@ -4,26 +4,30 @@ use std::collections::BTreeMap;
 use std::path::Path;
 
 use crate::error::Result;
+use crate::generator::typescript::common::{
+    generate_params_type, generate_row_type, json_stringify, TsTypeMap,
+};
 use crate::generator::{DriverGenerator, GeneratedFile};
-use crate::ir::{QueryCommand, QueryDef, SqlType, SqlTypeCategory, SqlcxIR};
+use crate::ir::{QueryCommand, QueryDef, SqlcxIR};
 use crate::utils::{camel_case, pascal_case};
 
 pub struct BetterSqlite3Generator;
 
-fn ts_type(sql_type: &SqlType) -> String {
-    if let Some(elem) = &sql_type.element_type {
-        return format!("{}[]", ts_type(elem));
+// SQLite has no native boolean/date/json/binary types, so better-sqlite3 maps:
+//   Boolean → number (0/1),  Date → string (text),  Json → string (text),  Binary → Buffer.
+struct BetterSqlite3TypeMap;
+impl TsTypeMap for BetterSqlite3TypeMap {
+    fn boolean_ty(&self) -> &'static str {
+        "number"
     }
-    match sql_type.category {
-        SqlTypeCategory::String | SqlTypeCategory::Uuid | SqlTypeCategory::Enum => {
-            "string".to_string()
-        }
-        SqlTypeCategory::Number => "number".to_string(),
-        SqlTypeCategory::Boolean => "number".to_string(), // SQLite uses 0/1
-        SqlTypeCategory::Date => "string".to_string(),    // SQLite stores as text
-        SqlTypeCategory::Json => "string".to_string(),    // SQLite stores as text
-        SqlTypeCategory::Binary => "Buffer".to_string(),
-        SqlTypeCategory::Unknown => "unknown".to_string(),
+    fn date_ty(&self) -> &'static str {
+        "string"
+    }
+    fn json_ty(&self) -> &'static str {
+        "string"
+    }
+    fn binary_ty(&self) -> &'static str {
+        "Buffer"
     }
 }
 
@@ -52,56 +56,17 @@ fn to_sqlite_params(sql: &str) -> (String, Vec<u32>) {
     (result, indices)
 }
 
-fn generate_row_type(query: &QueryDef) -> String {
-    if query.returns.is_empty() {
-        return String::new();
-    }
-    let type_name = format!("{}Row", pascal_case(&query.name));
-    let fields: Vec<String> = query
-        .returns
-        .iter()
-        .map(|col| {
-            let field_name = col.alias.as_deref().unwrap_or(&col.name);
-            let ts = ts_type(&col.sql_type);
-            let nullable = if col.nullable { " | null" } else { "" };
-            format!("  {field_name}: {ts}{nullable};")
-        })
-        .collect();
-    format!("export interface {type_name} {{\n{}\n}}", fields.join("\n"))
-}
-
-fn generate_params_type(query: &QueryDef) -> String {
-    if query.params.is_empty() {
-        return String::new();
-    }
-    let type_name = format!("{}Params", pascal_case(&query.name));
-    let fields: Vec<String> = query
-        .params
-        .iter()
-        .map(|p| format!("  {}: {};", p.name, ts_type(&p.sql_type)))
-        .collect();
-    format!("export interface {type_name} {{\n{}\n}}", fields.join("\n"))
-}
-
-fn json_stringify_sqlite(s: &str) -> (String, Vec<u32>) {
-    let (sqlite_sql, indices) = to_sqlite_params(s);
-    let escaped = sqlite_sql
-        .replace('\\', "\\\\")
-        .replace('"', "\\\"")
-        .replace('\n', "\\n")
-        .replace('\r', "\\r")
-        .replace('\t', "\\t");
-    (format!("\"{escaped}\""), indices)
-}
-
 fn generate_query_function(query: &QueryDef) -> String {
     let fn_name = camel_case(&query.name);
-    let row_type = generate_row_type(query);
-    let params_interface = generate_params_type(query);
+    let row_type = generate_row_type(&BetterSqlite3TypeMap, query);
+    let params_interface = generate_params_type(&BetterSqlite3TypeMap, query);
     let has_params = !query.params.is_empty();
     let params_type_name = format!("{}Params", pascal_case(&query.name));
-    let (sql_str, param_indices) = json_stringify_sqlite(&query.sql);
-    let sql_const = format!("export const {fn_name}Sql = {sql_str};");
+    let (sqlite_sql, param_indices) = to_sqlite_params(&query.sql);
+    let sql_const = format!(
+        "export const {fn_name}Sql = {};",
+        json_stringify(&sqlite_sql)
+    );
 
     let params_sig = if has_params {
         format!(", params: {params_type_name}")

@@ -1,5 +1,6 @@
 pub mod better_sqlite3;
 pub mod bun_sql;
+pub mod common;
 pub mod mysql2;
 pub mod pg;
 pub mod typebox;

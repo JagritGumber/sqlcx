@@ -92,6 +92,13 @@ static UNSUPPORTED_JOIN_RE: LazyLock<Regex> = LazyLock::new(|| {
         .unwrap()
 });
 
+// Case-insensitive ` ON ` and ` AS ` separators. We use regex rather than
+// `to_lowercase().find(...)` because lowercasing can change byte offsets
+// for non-ASCII characters, making subsequent slicing of the original
+// string panic at non-char-boundary positions.
+static ON_SEP_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?i)\s+ON\s+").unwrap());
+static AS_SEP_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?i)\s+AS\s+").unwrap());
+
 /// Walk a query's FROM clause and return the alias → table mapping.
 /// Returns an empty map (no join detected) when the query has no FROM clause.
 /// Returns an error for OUTER / USING / NATURAL / CROSS joins with a message
@@ -133,12 +140,9 @@ pub fn parse_join_clauses<'a>(
 }
 
 fn split_off_on_clause(segment: &str) -> &str {
-    let bytes = segment.as_bytes();
-    let lower = segment.to_lowercase();
-    if let Some(idx) = lower.find(" on ") {
-        std::str::from_utf8(&bytes[..idx]).unwrap_or(segment)
-    } else {
-        segment
+    match ON_SEP_RE.find(segment) {
+        Some(m) => &segment[..m.start()],
+        None => segment,
     }
 }
 
@@ -230,13 +234,12 @@ pub fn resolve_multi_table_select_column(
 }
 
 fn split_as_alias(expr: &str) -> (&str, Option<&str>) {
-    let lower = expr.to_lowercase();
-    // Locate the ` AS ` separator case-insensitively, then skip exactly
-    // 4 bytes (space + A + S + space) in the original string so mixed-case
-    // forms like `As`, `aS`, `AS`, `as` are all handled.
-    if let Some(idx) = lower.rfind(" as ") {
-        let lhs = &expr[..idx];
-        let alias = expr[idx + 4..].trim();
+    // Locate the LAST ` AS ` separator case-insensitively using regex,
+    // which returns byte positions valid on the original (possibly
+    // non-ASCII) string so slicing never panics.
+    if let Some(m) = AS_SEP_RE.find_iter(expr).last() {
+        let lhs = &expr[..m.start()];
+        let alias = expr[m.end()..].trim();
         if !alias.is_empty() && alias.chars().all(|c| c.is_alphanumeric() || c == '_') {
             return (lhs.trim(), Some(alias));
         }
@@ -369,6 +372,27 @@ mod tests {
             assert_eq!(col.name, "id", "form={form}");
             assert_eq!(col.alias.as_deref(), Some("user_id"), "form={form}");
         }
+    }
+
+    #[test]
+    fn split_as_alias_does_not_panic_on_non_ascii() {
+        // Input contains non-ASCII bytes before " AS " — previous
+        // implementation lowercased the string (which changes byte
+        // widths for some scripts) then sliced the original, which
+        // could panic at non-char-boundary. Regex-based version is safe.
+        let (lhs, alias) = split_as_alias("u.name_İ AS user_name");
+        assert_eq!(lhs, "u.name_İ");
+        assert_eq!(alias, Some("user_name"));
+    }
+
+    #[test]
+    fn parse_join_clauses_does_not_panic_on_non_ascii_on_clause() {
+        let tables = vec![table("users", &["id"]), table("orgs", &["id"])];
+        // The ON condition contains non-ASCII identifiers.
+        let sql = "SELECT u.id FROM users u INNER JOIN orgs o ON u.İd = o.id";
+        let map = parse_join_clauses(sql, &tables, "q.sql").unwrap();
+        assert!(map.lookup("u").is_some());
+        assert!(map.lookup("o").is_some());
     }
 
     #[test]

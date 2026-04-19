@@ -5,11 +5,15 @@ use std::collections::BTreeSet;
 use std::path::Path;
 
 use crate::error::Result;
+use crate::generator::go::common::{
+    escape_sql, func_params, generate_result_struct, generate_row_struct, query_args, scan_fields,
+    sql_const_name,
+};
 use crate::generator::{DriverGenerator, GeneratedFile};
 use crate::ir::{ColumnDef, QueryCommand, QueryDef, SqlcxIR};
 use crate::utils::pascal_case;
 
-use super::structs::{go_base_type, go_column_type, go_imports_for_columns};
+use super::structs::go_imports_for_columns;
 
 pub struct DatabaseSqlGenerator;
 
@@ -42,107 +46,6 @@ func New(db DBTX) *Queries {
 
 // ── Query generation ──────────────────────────────────────────────────────────
 
-/// Generate the SQL constant name for a query.
-fn sql_const_name(query_name: &str) -> String {
-    format!("{}SQL", lcfirst(&pascal_case(query_name)))
-}
-
-/// Lowercase the first character of a string.
-fn lcfirst(s: &str) -> String {
-    let mut c = s.chars();
-    match c.next() {
-        None => String::new(),
-        Some(f) => f.to_lowercase().collect::<String>() + c.as_str(),
-    }
-}
-
-/// Generate a Go function parameter type from a column.
-fn param_go_type(col: &ColumnDef) -> String {
-    if col.nullable {
-        format!("*{}", go_base_type(&col.sql_type))
-    } else {
-        go_base_type(&col.sql_type)
-    }
-}
-
-/// Generate the row struct for queries that return non-table columns.
-fn generate_row_struct(query: &QueryDef) -> Option<String> {
-    if query.returns.is_empty() {
-        return None;
-    }
-    let type_name = format!("{}Row", pascal_case(&query.name));
-    let fields: Vec<String> = query
-        .returns
-        .iter()
-        .map(|col| {
-            let field_name = pascal_case(col.alias.as_deref().unwrap_or(&col.name));
-            let field_type = go_column_type(col);
-            format!(
-                "\t{} {} `db:\"{}\" json:\"{}\"`",
-                field_name,
-                field_type,
-                col.alias.as_deref().unwrap_or(&col.name),
-                col.alias.as_deref().unwrap_or(&col.name),
-            )
-        })
-        .collect();
-    Some(format!(
-        "type {} struct {{\n{}\n}}",
-        type_name,
-        fields.join("\n")
-    ))
-}
-
-/// Generate a result struct for :execresult queries.
-fn generate_result_struct(query: &QueryDef) -> String {
-    let type_name = format!("{}Result", pascal_case(&query.name));
-    format!("type {} struct {{\n\tRowsAffected int64\n}}", type_name)
-}
-
-/// Generate scan fields (&i.FieldName) for a row.
-fn scan_fields(columns: &[ColumnDef]) -> String {
-    columns
-        .iter()
-        .map(|col| {
-            let field_name = pascal_case(col.alias.as_deref().unwrap_or(&col.name));
-            format!("&i.{}", field_name)
-        })
-        .collect::<Vec<_>>()
-        .join(", ")
-}
-
-/// Generate the function signature params for a query.
-fn func_params(query: &QueryDef) -> String {
-    if query.params.is_empty() {
-        return "ctx context.Context".to_string();
-    }
-    let params: Vec<String> = query
-        .params
-        .iter()
-        .map(|p| {
-            let col = ColumnDef {
-                name: p.name.clone(),
-                alias: None,
-                source_table: None,
-                sql_type: p.sql_type.clone(),
-                nullable: false,
-                has_default: false,
-            };
-            format!("{} {}", p.name, param_go_type(&col))
-        })
-        .collect();
-    format!("ctx context.Context, {}", params.join(", "))
-}
-
-/// Generate the args list for ExecContext/QueryContext calls.
-fn query_args(query: &QueryDef) -> String {
-    if query.params.is_empty() {
-        return String::new();
-    }
-    let args: Vec<String> = query.params.iter().map(|p| p.name.clone()).collect();
-    format!(", {}", args.join(", "))
-}
-
 /// Generate a full query function.
 fn generate_query_function(query: &QueryDef) -> String {
     let const_name = sql_const_name(&query.name);
@@ -156,13 +59,7 @@ fn generate_query_function(query: &QueryDef) -> String {
     parts.push(format!(
         "const {} = \"{}\"",
         const_name,
-        query
-            .sql
-            .replace('\\', "\\\\")
-            .replace('"', "\\\"")
-            .replace('\n', "\\n")
-            .replace('\r', "\\r")
-            .replace('\t', "\\t"),
+        escape_sql(&query.sql),
     ));
 
     match query.command {

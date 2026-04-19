@@ -5,11 +5,15 @@ use std::collections::BTreeSet;
 use std::path::Path;
 
 use crate::error::Result;
+use crate::generator::go::common::{
+    escape_sql, func_params, generate_result_struct, generate_row_struct, query_args, scan_fields,
+    sql_const_name,
+};
 use crate::generator::{DriverGenerator, GeneratedFile};
 use crate::ir::{ColumnDef, QueryCommand, QueryDef, SqlcxIR};
 use crate::utils::pascal_case;
 
-use super::structs::{go_base_type, go_column_type, go_imports_for_columns};
+use super::structs::go_imports_for_columns;
 
 pub struct PgxGenerator;
 
@@ -40,99 +44,6 @@ func New(db DBTX) *Queries {
     .to_string()
 }
 
-fn sql_const_name(query_name: &str) -> String {
-    format!("{}SQL", lcfirst(&pascal_case(query_name)))
-}
-
-fn lcfirst(s: &str) -> String {
-    let mut c = s.chars();
-    match c.next() {
-        None => String::new(),
-        Some(f) => f.to_lowercase().collect::<String>() + c.as_str(),
-    }
-}
-
-fn param_go_type(col: &ColumnDef) -> String {
-    if col.nullable {
-        format!("*{}", go_base_type(&col.sql_type))
-    } else {
-        go_base_type(&col.sql_type)
-    }
-}
-
-fn generate_row_struct(query: &QueryDef) -> Option<String> {
-    if query.returns.is_empty() {
-        return None;
-    }
-    let type_name = format!("{}Row", pascal_case(&query.name));
-    let fields: Vec<String> = query
-        .returns
-        .iter()
-        .map(|col| {
-            let field_name = pascal_case(col.alias.as_deref().unwrap_or(&col.name));
-            let field_type = go_column_type(col);
-            format!(
-                "\t{} {} `db:\"{}\" json:\"{}\"`",
-                field_name,
-                field_type,
-                col.alias.as_deref().unwrap_or(&col.name),
-                col.alias.as_deref().unwrap_or(&col.name),
-            )
-        })
-        .collect();
-    Some(format!(
-        "type {} struct {{\n{}\n}}",
-        type_name,
-        fields.join("\n")
-    ))
-}
-
-fn generate_result_struct(query: &QueryDef) -> String {
-    let type_name = format!("{}Result", pascal_case(&query.name));
-    format!("type {} struct {{\n\tRowsAffected int64\n}}", type_name)
-}
-
-fn scan_fields(columns: &[ColumnDef]) -> String {
-    columns
-        .iter()
-        .map(|col| {
-            let field_name = pascal_case(col.alias.as_deref().unwrap_or(&col.name));
-            format!("&i.{}", field_name)
-        })
-        .collect::<Vec<_>>()
-        .join(", ")
-}
-
-fn func_params(query: &QueryDef) -> String {
-    if query.params.is_empty() {
-        return "ctx context.Context".to_string();
-    }
-    let params: Vec<String> = query
-        .params
-        .iter()
-        .map(|p| {
-            let col = ColumnDef {
-                name: p.name.clone(),
-                alias: None,
-                source_table: None,
-                sql_type: p.sql_type.clone(),
-                nullable: false,
-                has_default: false,
-            };
-            format!("{} {}", p.name, param_go_type(&col))
-        })
-        .collect();
-    format!("ctx context.Context, {}", params.join(", "))
-}
-
-fn query_args(query: &QueryDef) -> String {
-    if query.params.is_empty() {
-        return String::new();
-    }
-    let args: Vec<String> = query.params.iter().map(|p| p.name.clone()).collect();
-    format!(", {}", args.join(", "))
-}
-
 fn generate_query_function(query: &QueryDef) -> String {
     let const_name = sql_const_name(&query.name);
     let func_name = pascal_case(&query.name);
@@ -144,13 +55,7 @@ fn generate_query_function(query: &QueryDef) -> String {
     parts.push(format!(
         "const {} = \"{}\"",
         const_name,
-        query
-            .sql
-            .replace('\\', "\\\\")
-            .replace('"', "\\\"")
-            .replace('\n', "\\n")
-            .replace('\r', "\\r")
-            .replace('\t', "\\t"),
+        escape_sql(&query.sql),
     ));
 
     match query.command {

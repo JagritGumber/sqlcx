@@ -1,79 +1,12 @@
 use std::path::Path;
 
 use crate::error::Result;
+use crate::generator::rust_lang::common::{param_type, row_field_type};
 use crate::generator::{DriverGenerator, GeneratedFile};
-use crate::ir::{ColumnDef, QueryCommand, QueryDef, SqlType, SqlTypeCategory, SqlcxIR};
+use crate::ir::{QueryCommand, QueryDef, SqlcxIR};
 use crate::utils::{pascal_case, snake_case};
 
 pub struct SqlxGenerator;
-
-// ── Type mapping ──────────────────────────────────────────────────────────────
-
-/// Map a SQL type to its Rust type for query row structs.
-fn rust_type(sql_type: &SqlType) -> String {
-    if let Some(elem) = &sql_type.element_type {
-        return format!("Vec<{}>", rust_type(elem));
-    }
-
-    match sql_type.category {
-        SqlTypeCategory::String | SqlTypeCategory::Uuid | SqlTypeCategory::Enum => {
-            "String".to_string()
-        }
-        SqlTypeCategory::Number => number_type(&sql_type.raw),
-        SqlTypeCategory::Boolean => "bool".to_string(),
-        SqlTypeCategory::Date => date_type(&sql_type.raw),
-        SqlTypeCategory::Json => "serde_json::Value".to_string(),
-        SqlTypeCategory::Binary => "Vec<u8>".to_string(),
-        SqlTypeCategory::Unknown => "serde_json::Value".to_string(),
-    }
-}
-
-fn number_type(raw: &str) -> String {
-    let upper = raw.to_uppercase();
-    if upper.contains("BIGINT") || upper.contains("BIGSERIAL") {
-        "i64".to_string()
-    } else if upper.contains("REAL")
-        || upper.contains("FLOAT")
-        || upper.contains("DOUBLE")
-        || upper.contains("DECIMAL")
-        || upper.contains("NUMERIC")
-    {
-        "f64".to_string()
-    } else {
-        "i32".to_string()
-    }
-}
-
-fn date_type(raw: &str) -> String {
-    let upper = raw.to_uppercase();
-    if upper.contains("TIMESTAMP") {
-        "chrono::NaiveDateTime".to_string()
-    } else if upper.contains("TIME") {
-        "chrono::NaiveTime".to_string()
-    } else {
-        "chrono::NaiveDate".to_string()
-    }
-}
-
-/// Build a field type for a return column: nullable → `Option<T>`.
-fn row_field_type(col: &ColumnDef) -> String {
-    let base = rust_type(&col.sql_type);
-    if col.nullable {
-        format!("Option<{}>", base)
-    } else {
-        base
-    }
-}
-
-/// Map a SQL type to its Rust function parameter type (using references).
-fn param_type(sql_type: &SqlType) -> String {
-    let base = rust_type(sql_type);
-    match base.as_str() {
-        "String" => "&str".to_string(),
-        "Vec<u8>" => "&[u8]".to_string(),
-        _ => base,
-    }
-}
 
 // ── Per-query generators ──────────────────────────────────────────────────────
 

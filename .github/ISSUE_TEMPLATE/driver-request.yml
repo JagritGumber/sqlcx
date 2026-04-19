@@ -1,0 +1,49 @@
+name: Driver request
+description: Request a new database driver or language target
+labels: ["driver-request"]
+body:
+  - type: dropdown
+    id: language
+    attributes:
+      label: Language
+      options:
+        - TypeScript
+        - Python
+        - Go
+        - Rust
+        - Java
+        - Kotlin
+        - C#
+        - Other (specify in description)
+    validations:
+      required: true
+
+  - type: input
+    id: driver
+    attributes:
+      label: Driver / library
+      placeholder: "e.g. modernc.org/sqlite, jdbc, npgsql"
+    validations:
+      required: true
+
+  - type: input
+    id: database
+    attributes:
+      label: Database
+      placeholder: "Postgres, MySQL, SQLite, DuckDB, libSQL, etc."
+    validations:
+      required: true
+
+  - type: textarea
+    id: usecase
+    attributes:
+      label: What you'd build with it
+      description: Helps prioritize. Real production use case > hypothetical interest.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: What you're using today
+      description: e.g. sqlc, raw queries, an ORM. Why is sqlcx interesting over those for this combo?

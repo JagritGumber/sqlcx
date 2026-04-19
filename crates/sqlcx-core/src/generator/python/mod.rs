@@ -1,4 +1,5 @@
 pub mod asyncpg;
+pub mod common;
 pub mod psycopg;
 pub mod pydantic;
 

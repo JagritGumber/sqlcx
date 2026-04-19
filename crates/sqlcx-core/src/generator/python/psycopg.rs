@@ -4,82 +4,18 @@ use std::collections::BTreeMap;
 use std::path::Path;
 
 use crate::error::Result;
+use crate::generator::python::common::{
+    escape_sql, generate_params_class, generate_row_class,
+};
 use crate::generator::{DriverGenerator, GeneratedFile};
-use crate::ir::{QueryCommand, QueryDef, SqlType, SqlTypeCategory, SqlcxIR};
+use crate::ir::{ParamDef, QueryCommand, QueryDef, SqlcxIR};
 use crate::utils::{pascal_case, snake_case};
 
 pub struct PsycopgGenerator;
 
-// ── Type mapping ──────────────────────────────────────────────────────────────
-
-fn py_type(sql_type: &SqlType) -> String {
-    if let Some(elem) = &sql_type.element_type {
-        return format!("list[{}]", py_type(elem));
-    }
-    match sql_type.category {
-        SqlTypeCategory::String | SqlTypeCategory::Uuid | SqlTypeCategory::Enum => {
-            "str".to_string()
-        }
-        SqlTypeCategory::Number => {
-            let upper = sql_type.raw.to_uppercase();
-            if upper.contains("REAL")
-                || upper.contains("FLOAT")
-                || upper.contains("DOUBLE")
-                || upper.contains("DECIMAL")
-                || upper.contains("NUMERIC")
-            {
-                "float".to_string()
-            } else {
-                "int".to_string()
-            }
-        }
-        SqlTypeCategory::Boolean => "bool".to_string(),
-        SqlTypeCategory::Date => "datetime".to_string(),
-        SqlTypeCategory::Json => "Any".to_string(),
-        SqlTypeCategory::Binary => "bytes".to_string(),
-        SqlTypeCategory::Unknown => "Any".to_string(),
-    }
-}
-
-// ── Per-query generators ─────────────────────────────────────────────────────
-
-fn generate_row_class(query: &QueryDef) -> String {
-    if query.returns.is_empty() {
-        return String::new();
-    }
-    let class_name = format!("{}Row", pascal_case(&query.name));
-    let fields: Vec<String> = query
-        .returns
-        .iter()
-        .map(|col| {
-            let name = col.alias.as_deref().unwrap_or(&col.name);
-            let ty = py_type(&col.sql_type);
-            if col.nullable {
-                format!("    {}: {} | None", name, ty)
-            } else {
-                format!("    {}: {}", name, ty)
-            }
-        })
-        .collect();
-    format!("@dataclass\nclass {}:\n{}", class_name, fields.join("\n"))
-}
-
-fn generate_params_class(query: &QueryDef) -> String {
-    if query.params.is_empty() {
-        return String::new();
-    }
-    let class_name = format!("{}Params", pascal_case(&query.name));
-    let fields: Vec<String> = query
-        .params
-        .iter()
-        .map(|p| format!("    {}: {}", p.name, py_type(&p.sql_type)))
-        .collect();
-    format!("@dataclass\nclass {}:\n{}", class_name, fields.join("\n"))
-}
-
 /// Convert $1, $2, ... placeholders to %(param_name)s for psycopg3.
 /// Uses named params to correctly handle reused ($1 OR $1) and out-of-order ($2 AND $1) params.
-fn to_psycopg_params(sql: &str, params: &[crate::ir::ParamDef]) -> String {
+fn to_psycopg_params(sql: &str, params: &[ParamDef]) -> String {
     let mut result = String::with_capacity(sql.len());
     let mut chars = sql.chars().peekable();
     while let Some(c) = chars.next() {
@@ -106,26 +42,17 @@ fn to_psycopg_params(sql: &str, params: &[crate::ir::ParamDef]) -> String {
     result
 }
 
-fn escape_sql(s: &str, params: &[crate::ir::ParamDef]) -> String {
-    let converted = to_psycopg_params(s, params);
-    converted
-        .replace('\\', "\\\\")
-        .replace('"', "\\\"")
-        .replace('\n', "\\n")
-        .replace('\r', "\\r")
-        .replace('\t', "\\t")
-}
-
 fn generate_query_function(query: &QueryDef) -> String {
     let fn_name = snake_case(&query.name);
     let row_class = generate_row_class(query);
     let params_class = generate_params_class(query);
     let has_params = !query.params.is_empty();
     let params_type_name = format!("{}Params", pascal_case(&query.name));
+    let rewritten_sql = to_psycopg_params(&query.sql, &query.params);
     let sql_const = format!(
         "{}_SQL = \"{}\"",
         fn_name.to_uppercase(),
-        escape_sql(&query.sql, &query.params)
+        escape_sql(&rewritten_sql)
     );
 
     let params_sig = if has_params {
@@ -199,8 +126,6 @@ fn generate_query_function(query: &QueryDef) -> String {
 
     parts.join("\n\n")
 }
-
-// ── Public API ────────────────────────────────────────────────────────────────
 
 impl PsycopgGenerator {
     pub fn generate_client(&self) -> String {

@@ -48,9 +48,12 @@ jobs:
       - name: cargo test
         run: cargo test --workspace
         env:
-          # Snapshot tests fail loudly on mismatch (don't accept silently)
-          INSTA_UPDATE: no
-          INSTA_FORCE_PASS: 0
+          # Snapshot tests fail loudly on mismatch (don't accept silently).
+          # Values are quoted so YAML does not coerce `no` to the boolean
+          # false — insta needs the literal string "no" to trigger the
+          # "never update snapshots, fail on mismatch" behavior.
+          INSTA_UPDATE: "no"
+          INSTA_FORCE_PASS: "0"
 
       - name: cargo clippy
         run: cargo clippy --workspace --all-targets -- -D warnings

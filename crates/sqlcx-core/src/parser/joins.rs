@@ -106,8 +106,9 @@ static ON_SEP_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?i)\s+ON\s+")
 static AS_SEP_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?i)\s+AS\s+").unwrap());
 
 // Cheap predicate: matches the JOIN keyword anywhere in a string.
-// Dialect parsers should NOT run this against full SQL — JOINs inside
-// subqueries would false-positive. Use [`has_outer_join`] instead.
+// Kept private — callers should use [`has_outer_join`] instead, which
+// scopes the match to the outer FROM body so subquery JOINs don't
+// false-positive.
 static JOIN_DETECT_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?i)\bJOIN\b").unwrap());
 
 /// Returns true if the query's *outer* FROM clause contains a JOIN.
@@ -119,6 +120,36 @@ pub fn has_outer_join(sql: &str) -> bool {
     };
     let from_body = caps.get(1).unwrap().as_str();
     JOIN_DETECT_RE.is_match(from_body)
+}
+
+/// Resolve a SELECT column list against a multi-table JOIN context.
+/// Shared across dialect parsers (postgres, mysql, sqlite): they detect
+/// the JOIN via [`has_outer_join`], pull the columns-part out of the
+/// SELECT, and call this function to build the typed `ColumnDef` list.
+///
+/// Rejects `SELECT *` across joins with a v1.2 pointer — listing
+/// qualified columns explicitly is required in v1.1.
+pub fn resolve_multi_table_columns(
+    cols_part: &str,
+    sql: &str,
+    schema_tables: &[TableDef],
+    source_file: &str,
+) -> Result<Vec<ColumnDef>> {
+    if cols_part.trim() == "*" {
+        return Err(SqlcxError::ParseError {
+            file: source_file.to_string(),
+            message:
+                "SELECT * across multi-table JOINs is not supported in v1.1 — list qualified columns explicitly (users.id, orgs.slug). `SELECT *` across joins ships in v1.2."
+                    .to_string(),
+        });
+    }
+
+    let alias_map = parse_join_clauses(sql, schema_tables, source_file)?;
+
+    cols_part
+        .split(',')
+        .map(|s| resolve_multi_table_select_column(s.trim(), &alias_map, source_file))
+        .collect()
 }
 
 /// Walk a query's FROM clause and return the alias → table mapping.

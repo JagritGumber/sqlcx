@@ -6,7 +6,7 @@ use regex::Regex;
 use crate::annotations::extract_annotations;
 use crate::error::Result;
 use crate::ir::{ColumnDef, EnumDef, QueryDef, SqlType, SqlTypeCategory, TableDef};
-use crate::parser::joins::{has_outer_join, parse_join_clauses, resolve_multi_table_select_column};
+use crate::parser::joins::{has_outer_join, resolve_multi_table_columns};
 use crate::parser::{
     build_params, ensure_supported_select_expr, make_unknown_column, split_column_defs,
     split_query_blocks, DatabaseParser,
@@ -464,11 +464,12 @@ fn resolve_return_columns(
     let cols_part = cap[1].trim();
 
     // Multi-table JOIN path: when the outer FROM contains a JOIN, route
-    // each select expression through the multi-table resolver. `has_outer_join`
-    // scopes the check to the outer FROM body so subqueries with JOINs
-    // (e.g. `WHERE id IN (SELECT ... JOIN ...)`) don't false-trigger.
+    // each select expression through the shared multi-table resolver.
+    // `has_outer_join` scopes the check to the outer FROM body so that
+    // subqueries with JOINs (e.g. `WHERE id IN (SELECT ... JOIN ...)`)
+    // don't false-trigger.
     if has_outer_join(sql) {
-        return resolve_return_columns_multi_table(cols_part, sql, schema_tables, source_file);
+        return resolve_multi_table_columns(cols_part, sql, schema_tables, source_file);
     }
 
     if cols_part == "*" {
@@ -508,29 +509,6 @@ fn resolve_return_columns(
                     .unwrap_or_else(|| make_unknown_column(&expr_lower)))
             }
         })
-        .collect()
-}
-
-fn resolve_return_columns_multi_table(
-    cols_part: &str,
-    sql: &str,
-    schema_tables: &[TableDef],
-    source_file: &str,
-) -> Result<Vec<ColumnDef>> {
-    if cols_part == "*" {
-        return Err(crate::error::SqlcxError::ParseError {
-            file: source_file.to_string(),
-            message:
-                "SELECT * across multi-table JOINs is not supported in v1.1 — list qualified columns explicitly (users.id, orgs.slug). `SELECT *` across joins ships in v1.2."
-                    .to_string(),
-        });
-    }
-
-    let alias_map = parse_join_clauses(sql, schema_tables, source_file)?;
-
-    cols_part
-        .split(',')
-        .map(|s| resolve_multi_table_select_column(s.trim(), &alias_map, source_file))
         .collect()
 }
 

@@ -1,0 +1,60 @@
+name: Bug report
+description: Report incorrect behavior in sqlcx
+labels: ["bug"]
+body:
+  - type: input
+    id: version
+    attributes:
+      label: sqlcx version
+      placeholder: "1.0.0 or commit SHA"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: language
+    attributes:
+      label: Target language
+      options:
+        - TypeScript
+        - Python
+        - Go
+        - Rust
+        - Multiple / not language-specific
+    validations:
+      required: true
+
+  - type: input
+    id: driver
+    attributes:
+      label: Driver (if applicable)
+      placeholder: "pg, bun-sql, asyncpg, sqlx, pgx, etc."
+
+  - type: textarea
+    id: schema
+    attributes:
+      label: Minimal SQL schema and query
+      description: The smallest reproduction. Paste schema.sql and the failing query.
+      render: sql
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: What sqlcx generated
+      render: text
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true
+
+  - type: textarea
+    id: env
+    attributes:
+      label: Environment
+      description: OS, Rust version, Node/Python/Go version if applicable.

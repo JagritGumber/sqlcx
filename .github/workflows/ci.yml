@@ -22,6 +22,20 @@ jobs:
           toolchain: stable
           components: rustfmt, clippy
 
+      - name: Install Node.js (for TS typecheck integration tests)
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: |
+            tests/typecheck/package-lock.json
+            tests/typecheck-zod3/package-lock.json
+
+      - name: Install TS typecheck fixture dependencies
+        run: |
+          npm --prefix tests/typecheck ci
+          npm --prefix tests/typecheck-zod3 ci
+
       - name: cargo fmt --check
         run: cargo fmt --all -- --check
 

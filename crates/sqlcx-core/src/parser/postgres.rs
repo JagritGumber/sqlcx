@@ -6,6 +6,7 @@ use regex::Regex;
 use crate::annotations::extract_annotations;
 use crate::error::Result;
 use crate::ir::{ColumnDef, EnumDef, QueryDef, SqlType, SqlTypeCategory, TableDef};
+use crate::parser::joins::{has_outer_join, parse_join_clauses, resolve_multi_table_select_column};
 use crate::parser::{
     build_params, ensure_supported_select_expr, make_unknown_column, split_column_defs,
     split_query_blocks, DatabaseParser,
@@ -445,6 +446,7 @@ fn resolve_returning_columns(sql: &str, table: Option<&TableDef>) -> Option<Vec<
 fn resolve_return_columns(
     sql: &str,
     table: Option<&TableDef>,
+    schema_tables: &[TableDef],
     source_file: &str,
 ) -> Result<Vec<ColumnDef>> {
     // Check RETURNING clause first
@@ -460,6 +462,14 @@ fn resolve_return_columns(
         return Ok(Vec::new());
     };
     let cols_part = cap[1].trim();
+
+    // Multi-table JOIN path: when the outer FROM contains a JOIN, route
+    // each select expression through the multi-table resolver. `has_outer_join`
+    // scopes the check to the outer FROM body so subqueries with JOINs
+    // (e.g. `WHERE id IN (SELECT ... JOIN ...)`) don't false-trigger.
+    if has_outer_join(sql) {
+        return resolve_return_columns_multi_table(cols_part, sql, schema_tables, source_file);
+    }
 
     if cols_part == "*" {
         return Ok(table.map(|t| t.columns.clone()).unwrap_or_default());
@@ -498,6 +508,29 @@ fn resolve_return_columns(
                     .unwrap_or_else(|| make_unknown_column(&expr_lower)))
             }
         })
+        .collect()
+}
+
+fn resolve_return_columns_multi_table(
+    cols_part: &str,
+    sql: &str,
+    schema_tables: &[TableDef],
+    source_file: &str,
+) -> Result<Vec<ColumnDef>> {
+    if cols_part == "*" {
+        return Err(crate::error::SqlcxError::ParseError {
+            file: source_file.to_string(),
+            message:
+                "SELECT * across multi-table JOINs is not supported in v1.1 — list qualified columns explicitly (users.id, orgs.slug). `SELECT *` across joins ships in v1.2."
+                    .to_string(),
+        });
+    }
+
+    let alias_map = parse_join_clauses(sql, schema_tables, source_file)?;
+
+    cols_part
+        .split(',')
+        .map(|s| resolve_multi_table_select_column(s.trim(), &alias_map, source_file))
         .collect()
 }
 
@@ -541,7 +574,7 @@ impl DatabaseParser for PostgresParser {
             let param_indices = extract_param_indices(&block.sql);
             let inferred_cols = infer_param_columns(&block.sql);
             let params = build_params(&block.comments, table, param_indices, inferred_cols);
-            let returns = resolve_return_columns(&block.sql, table, source_file)?;
+            let returns = resolve_return_columns(&block.sql, table, tables, source_file)?;
 
             let clean_sql = block
                 .sql
@@ -770,5 +803,105 @@ mod tests {
     fn resolve_parser_unknown() {
         let parser = crate::parser::resolve_parser("oracle");
         assert!(parser.is_err());
+    }
+
+    // ── INNER JOIN path tests ────────────────────────────────────────────────
+
+    fn join_schema() -> &'static str {
+        r#"
+        CREATE TABLE users (
+          id INTEGER PRIMARY KEY,
+          name TEXT NOT NULL,
+          org_id INTEGER NOT NULL
+        );
+        CREATE TABLE orgs (
+          id INTEGER PRIMARY KEY,
+          slug TEXT NOT NULL
+        );
+        "#
+    }
+
+    #[test]
+    fn inner_join_resolves_qualified_columns() {
+        let parser = PostgresParser::new();
+        let (tables, enums) = parser.parse_schema(join_schema()).unwrap();
+        let sql = "-- name: GetUserWithOrg :one\nSELECT users.name, orgs.slug FROM users INNER JOIN orgs ON users.org_id = orgs.id WHERE users.id = $1;";
+        let queries = parser.parse_queries(sql, &tables, &enums, "q.sql").unwrap();
+        assert_eq!(queries.len(), 1);
+        let q = &queries[0];
+        assert_eq!(q.returns.len(), 2);
+        assert_eq!(q.returns[0].name, "name");
+        assert_eq!(q.returns[0].source_table.as_deref(), Some("users"));
+        assert_eq!(q.returns[1].name, "slug");
+        assert_eq!(q.returns[1].source_table.as_deref(), Some("orgs"));
+    }
+
+    #[test]
+    fn inner_join_accepts_aliases_and_as() {
+        let parser = PostgresParser::new();
+        let (tables, enums) = parser.parse_schema(join_schema()).unwrap();
+        let sql = "-- name: Listing :many\nSELECT u.id AS user_id, o.slug AS org_slug FROM users u INNER JOIN orgs o ON u.org_id = o.id;";
+        let queries = parser.parse_queries(sql, &tables, &enums, "q.sql").unwrap();
+        let q = &queries[0];
+        assert_eq!(q.returns[0].name, "id");
+        assert_eq!(q.returns[0].alias.as_deref(), Some("user_id"));
+        assert_eq!(q.returns[0].source_table.as_deref(), Some("users"));
+        assert_eq!(q.returns[1].alias.as_deref(), Some("org_slug"));
+        assert_eq!(q.returns[1].source_table.as_deref(), Some("orgs"));
+    }
+
+    #[test]
+    fn inner_join_rejects_select_star() {
+        let parser = PostgresParser::new();
+        let (tables, enums) = parser.parse_schema(join_schema()).unwrap();
+        let sql = "-- name: Everything :many\nSELECT * FROM users INNER JOIN orgs ON users.org_id = orgs.id;";
+        let err = parser
+            .parse_queries(sql, &tables, &enums, "q.sql")
+            .unwrap_err();
+        assert!(err
+            .to_string()
+            .contains("SELECT * across multi-table JOINs"));
+    }
+
+    #[test]
+    fn left_join_rejected_with_v12_pointer() {
+        let parser = PostgresParser::new();
+        let (tables, enums) = parser.parse_schema(join_schema()).unwrap();
+        let sql = "-- name: WithLeft :many\nSELECT users.id FROM users LEFT JOIN orgs ON users.org_id = orgs.id;";
+        let err = parser
+            .parse_queries(sql, &tables, &enums, "q.sql")
+            .unwrap_err();
+        assert!(err.to_string().contains("v1.1 supports INNER JOIN only"));
+    }
+
+    #[test]
+    fn single_table_path_still_rejects_qualified_selects() {
+        // Queries without JOIN go through the existing single-table path,
+        // which still rejects qualified selects via ensure_supported_select_expr.
+        // (PR #32 is the separate effort that relaxes this for single-table queries.)
+        let parser = PostgresParser::new();
+        let (tables, enums) = parser.parse_schema(join_schema()).unwrap();
+        let sql = "-- name: Bad :one\nSELECT users.id FROM users WHERE users.id = $1;";
+        let err = parser
+            .parse_queries(sql, &tables, &enums, "q.sql")
+            .unwrap_err();
+        assert!(err
+            .to_string()
+            .contains("qualified select expressions are not supported"));
+    }
+
+    #[test]
+    fn join_in_subquery_does_not_route_outer_to_multi_table() {
+        // The outer FROM is single-table (`users`). The JOIN lives inside
+        // a subquery. The outer query must use the single-table path — if
+        // we routed to the multi-table resolver, the unqualified outer
+        // `id` select would fail with "requires qualified columns".
+        let parser = PostgresParser::new();
+        let (tables, enums) = parser.parse_schema(join_schema()).unwrap();
+        let sql = "-- name: SubquerySafe :many\nSELECT id FROM users WHERE id IN (SELECT users.id FROM users INNER JOIN orgs ON users.org_id = orgs.id);";
+        let queries = parser.parse_queries(sql, &tables, &enums, "q.sql").unwrap();
+        assert_eq!(queries[0].returns.len(), 1);
+        assert_eq!(queries[0].returns[0].name, "id");
+        assert_eq!(queries[0].returns[0].source_table, None);
     }
 }

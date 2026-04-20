@@ -175,12 +175,14 @@ fn generate_query_function(backend: SqlxBackend, query: &QueryDef) -> String {
     // the source Postgres SQL still produce correct behavior against the
     // rewritten `?` positional form.
     //
-    // Non-Copy types (e.g. serde_json::Value for JSON columns, Vec<u8> for
-    // binary) would fail to compile if a reused param produced two moves of
-    // the same owned value. For any param index that appears more than once
-    // in occurrence_indices we emit `.bind(name.clone())` for every use
-    // after the first. Copy-typed params (i32, &str) accept `.clone()` too
-    // (it's a no-op), so applying uniformly to duplicates is safe.
+    // Non-Copy types (e.g. serde_json::Value for JSON columns, Vec<i32> for
+    // array columns) would fail to compile if any use moved the owned value
+    // because subsequent uses would access a moved-from binding. For any
+    // param index that appears more than once in occurrence_indices we
+    // emit `.bind(name.clone())` on EVERY use — this keeps the original
+    // owned value intact across every bind call. Params that appear once
+    // just move/copy as before. `.clone()` on Copy types (i32, &str) is
+    // a no-op.
     let binds: String = if occurrence_indices.is_empty() {
         query
             .params
@@ -188,7 +190,6 @@ fn generate_query_function(backend: SqlxBackend, query: &QueryDef) -> String {
             .map(|p| format!("\n        .bind({})", p.name))
             .collect()
     } else {
-        let mut seen: std::collections::HashSet<u32> = std::collections::HashSet::new();
         let reused: std::collections::HashSet<u32> = {
             let mut once = std::collections::HashSet::new();
             let mut dup = std::collections::HashSet::new();
@@ -208,12 +209,9 @@ fn generate_query_function(backend: SqlxBackend, query: &QueryDef) -> String {
                     .find(|p| p.index == *idx)
                     .map(|p| p.name.as_str())
                     .unwrap_or("unknown");
-                let expr = if reused.contains(idx) && !seen.insert(*idx) {
-                    // Second or later occurrence of a reused param → clone.
+                let expr = if reused.contains(idx) {
                     format!("{param_name}.clone()")
                 } else {
-                    // First occurrence (reused or not) → move/copy.
-                    seen.insert(*idx);
                     param_name.to_string()
                 };
                 format!("\n        .bind({expr})")
@@ -447,10 +445,11 @@ mod tests {
     }
 
     #[test]
-    fn reused_param_in_mysql_body_emits_clone_on_duplicates() {
+    fn reused_param_in_mysql_body_clones_every_use() {
         // Synthesize a QueryDef that reuses $1 twice. The MySQL bind chain
-        // must emit .bind(x).bind(x.clone()) so non-Copy types don't cause
-        // a moved-value compile error in the generated code.
+        // must emit .bind(q.clone()) on EVERY use — cloning only the
+        // second would try to clone an already-moved value, which is a
+        // compile error for non-Copy types.
         let query = QueryDef {
             name: "SearchUsers".to_string(),
             command: QueryCommand::Many,
@@ -472,13 +471,43 @@ mod tests {
             source_file: "q.sql".to_string(),
         };
         let out = generate_query_function(SqlxBackend::MySql, &query);
-        // First occurrence moves, second occurrence clones.
-        assert!(out.contains(".bind(q)"));
-        assert!(out.contains(".bind(q.clone())"));
+        // Both binds use .clone() — the owned `q` is never moved during binding.
+        let clone_count = out.matches(".bind(q.clone())").count();
+        assert_eq!(clone_count, 2, "expected two .bind(q.clone()), got: {out}");
         // Postgres path never clones — it binds once per unique $N.
         let out = generate_query_function(SqlxBackend::Postgres, &query);
         assert!(out.contains(".bind(q)"));
         assert!(!out.contains(".bind(q.clone())"));
+    }
+
+    #[test]
+    fn single_use_param_does_not_clone() {
+        // Regression: params that appear exactly once must still move/copy,
+        // not clone. Otherwise we'd needlessly clone Copy types and force
+        // users to write Clone-impls for types that are only bound once.
+        let query = QueryDef {
+            name: "GetOne".to_string(),
+            command: QueryCommand::One,
+            sql: "SELECT * FROM t WHERE id = $1".to_string(),
+            params: vec![ParamDef {
+                index: 1,
+                name: "id".to_string(),
+                sql_type: SqlType {
+                    raw: "integer".to_string(),
+                    normalized: "integer".to_string(),
+                    category: SqlTypeCategory::Number,
+                    element_type: None,
+                    enum_name: None,
+                    enum_values: None,
+                    json_shape: None,
+                },
+            }],
+            returns: vec![],
+            source_file: "q.sql".to_string(),
+        };
+        let out = generate_query_function(SqlxBackend::MySql, &query);
+        assert!(out.contains(".bind(id)"));
+        assert!(!out.contains(".bind(id.clone())"));
     }
 
     #[test]

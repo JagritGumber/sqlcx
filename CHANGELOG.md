@@ -16,7 +16,7 @@ language in feature parity.
 ### Added
 
 - **Driver parity across all languages.** Every supported language now has
-  Postgres, MySQL, and SQLite drivers. 12 drivers total:
+  Postgres, MySQL, and SQLite drivers. 16 drivers total:
   - TypeScript: `pg`, `bun-sql`, `mysql2`, `better-sqlite3`
   - Python: `psycopg`, `asyncpg`, `sqlite3`, `mysql-connector`
   - Rust: `sqlx` (Postgres), `sqlx-mysql`, `sqlx-sqlite`, `tokio-postgres`

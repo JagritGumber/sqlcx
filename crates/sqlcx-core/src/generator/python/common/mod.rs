@@ -1,13 +1,14 @@
 //! Shared helpers for Python driver generators.
 //!
-//! Both psycopg and asyncpg map SQL types to the same Python types and emit
-//! identical `@dataclass Row`/`Params` classes. What differs is the
-//! placeholder syntax (psycopg uses `%(name)s` named params; asyncpg uses
-//! the raw `$1` positional) and the async vs sync query-function body.
-//! Those stay per-driver; this module owns the shared surface.
+//! psycopg and asyncpg map Postgres types to the same idiomatic Python
+//! types (bool, datetime, Any for JSON, bytes, etc). sqlite3 diverges:
+//! SQLite doesn't have native Boolean/Date/Json, so it maps them to
+//! int/str/str. The `PyTypeMap` trait captures that divergence — each
+//! driver provides a small type map struct; `py_type` and the
+//! row/params class generators take any `PyTypeMap` via generics.
 
 pub mod sql_escape;
 pub mod types;
 
 pub use sql_escape::escape_sql;
-pub use types::{generate_params_class, generate_row_class, py_type};
+pub use types::{DefaultPyTypeMap, PyTypeMap, generate_params_class, generate_row_class, py_type};

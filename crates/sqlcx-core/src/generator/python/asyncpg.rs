@@ -4,7 +4,9 @@ use std::collections::BTreeMap;
 use std::path::Path;
 
 use crate::error::Result;
-use crate::generator::python::common::{escape_sql, generate_params_class, generate_row_class};
+use crate::generator::python::common::{
+    DefaultPyTypeMap, escape_sql, generate_params_class, generate_row_class,
+};
 use crate::generator::{DriverGenerator, GeneratedFile};
 use crate::ir::{QueryCommand, QueryDef, SqlcxIR};
 use crate::utils::{pascal_case, snake_case};
@@ -13,8 +15,8 @@ pub struct AsyncpgGenerator;
 
 fn generate_query_function(query: &QueryDef) -> String {
     let fn_name = snake_case(&query.name);
-    let row_class = generate_row_class(query);
-    let params_class = generate_params_class(query);
+    let row_class = generate_row_class(&DefaultPyTypeMap, query);
+    let params_class = generate_params_class(&DefaultPyTypeMap, query);
     let has_params = !query.params.is_empty();
     let params_type_name = format!("{}Params", pascal_case(&query.name));
     let sql_const = format!(

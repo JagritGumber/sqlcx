@@ -18,13 +18,22 @@ use crate::utils::{pascal_case, snake_case};
 pub struct MysqlConnectorGenerator;
 
 /// Convert $1, $2, ... placeholders to `%s` for mysql-connector-python.
-/// Returns rewritten SQL and the param indices in SQL occurrence order.
+/// Also escapes every literal `%` in the source SQL to `%%`, because
+/// mysql-connector uses printf-style formatting in `cursor.execute(sql,
+/// params)` — a bare `%` followed by a character would be read as a
+/// format specifier and crash at runtime (e.g. `LIKE '%foo%'` would
+/// fail without escaping). Returns rewritten SQL and the param indices
+/// in SQL occurrence order.
 fn to_mysql_params(sql: &str) -> (String, Vec<u32>) {
     let mut result = String::with_capacity(sql.len());
     let mut indices = Vec::new();
     let mut chars = sql.chars().peekable();
     while let Some(c) = chars.next() {
-        if c == '$' {
+        if c == '%' {
+            // Escape literal % → %% so mysql-connector's printf parser
+            // doesn't treat it as a format specifier.
+            result.push_str("%%");
+        } else if c == '$' {
             if chars.peek().is_some_and(|ch| ch.is_ascii_digit()) {
                 let mut num_str = String::new();
                 while chars.peek().is_some_and(|ch| ch.is_ascii_digit()) {
@@ -258,5 +267,21 @@ mod tests {
         let (sql, idx) = to_mysql_params("WHERE a = $2 AND b = $1");
         assert_eq!(sql, "WHERE a = %s AND b = %s");
         assert_eq!(idx, vec![2, 1]);
+    }
+
+    #[test]
+    fn escapes_literal_percent_to_double_percent() {
+        // `LIKE '%foo%'` must become `LIKE '%%foo%%'` so mysql-connector's
+        // printf-style format parser doesn't crash on the bare `%` chars.
+        let (sql, _) = to_mysql_params("SELECT * FROM users WHERE name LIKE '%foo%'");
+        assert_eq!(sql, "SELECT * FROM users WHERE name LIKE '%%foo%%'");
+
+        // Mixed with parameter placeholder.
+        let (sql, idx) = to_mysql_params("SELECT * FROM users WHERE name LIKE '%' || $1 || '%'");
+        assert_eq!(
+            sql,
+            "SELECT * FROM users WHERE name LIKE '%%' || %s || '%%'"
+        );
+        assert_eq!(idx, vec![1]);
     }
 }

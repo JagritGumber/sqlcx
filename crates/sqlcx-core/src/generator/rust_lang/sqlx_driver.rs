@@ -42,8 +42,25 @@ impl SqlxBackend {
                 let mut out = String::with_capacity(sql.len());
                 let mut indices = Vec::new();
                 let mut chars = sql.chars().peekable();
+                // Track whether we're currently inside a single-quoted SQL string
+                // literal. `$N` inside a string is just literal text — don't rewrite.
+                // SQL escapes single quotes by doubling (`''`), so consecutive quotes
+                // stay inside the string.
+                let mut in_string = false;
                 while let Some(c) = chars.next() {
-                    if c == '$' && chars.peek().is_some_and(|ch| ch.is_ascii_digit()) {
+                    if c == '\'' {
+                        if in_string && chars.peek() == Some(&'\'') {
+                            // Escaped quote `''` — consume both, stay in string.
+                            out.push(c);
+                            out.push(chars.next().unwrap());
+                            continue;
+                        }
+                        in_string = !in_string;
+                        out.push(c);
+                        continue;
+                    }
+                    if !in_string && c == '$' && chars.peek().is_some_and(|ch| ch.is_ascii_digit())
+                    {
                         let mut num = String::new();
                         while chars.peek().is_some_and(|ch| ch.is_ascii_digit()) {
                             num.push(chars.next().unwrap());
@@ -401,6 +418,22 @@ mod tests {
         let (sql, idx) = SqlxBackend::Sqlite.rewrite_placeholders("WHERE b = $2 AND a = $1");
         assert_eq!(sql, "WHERE b = ? AND a = ?");
         assert_eq!(idx, vec![2, 1]);
+    }
+
+    #[test]
+    fn rewrite_preserves_dollar_n_inside_string_literals() {
+        // `$1` inside a single-quoted string is literal text — must not be
+        // rewritten, otherwise generated code would bind too many values.
+        let (sql, idx) =
+            SqlxBackend::MySql.rewrite_placeholders("SELECT '$1' FROM users WHERE id = $1");
+        assert_eq!(sql, "SELECT '$1' FROM users WHERE id = ?");
+        assert_eq!(idx, vec![1]);
+
+        // SQL escaped single quotes `''` stay inside the string.
+        let (sql, idx) =
+            SqlxBackend::MySql.rewrite_placeholders("SELECT 'O''Brien $1' FROM x WHERE id = $1");
+        assert_eq!(sql, "SELECT 'O''Brien $1' FROM x WHERE id = ?");
+        assert_eq!(idx, vec![1]);
     }
 
     #[test]

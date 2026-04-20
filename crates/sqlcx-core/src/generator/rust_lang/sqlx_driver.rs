@@ -25,28 +25,36 @@ impl SqlxBackend {
         }
     }
 
-    /// Postgres uses `$1, $2, ...` natively (no rewrite). MySQL and
-    /// SQLite sqlx drivers expect `?` placeholders. Rewrite $N → ? for
-    /// those backends, preserving order (sqlx MySQL/SQLite don't have
-    /// named params, so reused/out-of-order $N would already be bug-prone
-    /// upstream — we keep naive ordered conversion here).
-    fn rewrite_placeholders(self, sql: &str) -> String {
+    /// Rewrite Postgres `$N` placeholders to the form this backend expects.
+    /// Returns `(rewritten_sql, occurrence_indices)` where `occurrence_indices`
+    /// is empty for Postgres (no rewrite, bind order = unique-index order)
+    /// and for MySQL/SQLite is the sequence of `$N` *as they appeared in
+    /// document order*. Callers use it to emit `.bind(...)` in the correct
+    /// positional order, which matters for two cases:
+    /// - Reused: `WHERE x = $1 OR y = $1` becomes `? ? ` (two placeholders,
+    ///   both bind to params[index=1]).
+    /// - Out-of-order: `WHERE b = $2 AND a = $1` becomes `? ?` where the
+    ///   first `?` binds params[index=2] and the second binds params[index=1].
+    fn rewrite_placeholders(self, sql: &str) -> (String, Vec<u32>) {
         match self {
-            SqlxBackend::Postgres => sql.to_string(),
+            SqlxBackend::Postgres => (sql.to_string(), Vec::new()),
             SqlxBackend::MySql | SqlxBackend::Sqlite => {
                 let mut out = String::with_capacity(sql.len());
+                let mut indices = Vec::new();
                 let mut chars = sql.chars().peekable();
                 while let Some(c) = chars.next() {
                     if c == '$' && chars.peek().is_some_and(|ch| ch.is_ascii_digit()) {
+                        let mut num = String::new();
                         while chars.peek().is_some_and(|ch| ch.is_ascii_digit()) {
-                            chars.next();
+                            num.push(chars.next().unwrap());
                         }
+                        indices.push(num.parse::<u32>().unwrap_or(0));
                         out.push('?');
                     } else {
                         out.push(c);
                     }
                 }
-                out
+                (out, indices)
             }
         }
     }
@@ -120,7 +128,7 @@ fn generate_query_function(backend: SqlxBackend, query: &QueryDef) -> String {
     let mut parts: Vec<String> = Vec::new();
 
     // SQL constant — placeholder style depends on backend.
-    let rewritten_sql = backend.rewrite_placeholders(&query.sql);
+    let (rewritten_sql, occurrence_indices) = backend.rewrite_placeholders(&query.sql);
     parts.push(format!(
         "pub const {}: &str = {:?};",
         sql_const_name, rewritten_sql
@@ -144,12 +152,31 @@ fn generate_query_function(backend: SqlxBackend, query: &QueryDef) -> String {
         params_sig.push_str(&format!(", {}: {}", p.name, ptype));
     }
 
-    // Bind calls
-    let binds: String = query
-        .params
-        .iter()
-        .map(|p| format!("\n        .bind({})", p.name))
-        .collect();
+    // Bind calls. For Postgres, bind once per unique param (sqlx + Postgres
+    // dedupe $N on the server side). For MySQL/SQLite, bind once per
+    // placeholder occurrence in SQL order — reused or out-of-order $N in
+    // the source Postgres SQL still produce correct behavior against the
+    // rewritten `?` positional form.
+    let binds: String = if occurrence_indices.is_empty() {
+        query
+            .params
+            .iter()
+            .map(|p| format!("\n        .bind({})", p.name))
+            .collect()
+    } else {
+        occurrence_indices
+            .iter()
+            .map(|idx| {
+                let param_name = query
+                    .params
+                    .iter()
+                    .find(|p| p.index == *idx)
+                    .map(|p| p.name.as_str())
+                    .unwrap_or("unknown");
+                format!("\n        .bind({})", param_name)
+            })
+            .collect()
+    };
 
     // Function body based on command
     let (return_type, body) = match query.command {
@@ -346,15 +373,34 @@ mod tests {
 
     #[test]
     fn placeholder_rewrite_preserves_nonparam_dollars() {
-        // The regex must only eat $N, not bare $ not followed by digits.
-        assert_eq!(
-            SqlxBackend::MySql.rewrite_placeholders("SELECT '$foo' FROM x WHERE a = $1"),
-            "SELECT '$foo' FROM x WHERE a = ?"
-        );
-        assert_eq!(
-            SqlxBackend::Postgres.rewrite_placeholders("SELECT '$foo' FROM x WHERE a = $1"),
-            "SELECT '$foo' FROM x WHERE a = $1"
-        );
+        // The parser must only eat $N, not bare $ not followed by digits.
+        let (sql, idx) =
+            SqlxBackend::MySql.rewrite_placeholders("SELECT '$foo' FROM x WHERE a = $1");
+        assert_eq!(sql, "SELECT '$foo' FROM x WHERE a = ?");
+        assert_eq!(idx, vec![1]);
+
+        let (sql, idx) =
+            SqlxBackend::Postgres.rewrite_placeholders("SELECT '$foo' FROM x WHERE a = $1");
+        assert_eq!(sql, "SELECT '$foo' FROM x WHERE a = $1");
+        assert!(idx.is_empty()); // Postgres keeps native $N, no occurrence indices needed.
+    }
+
+    #[test]
+    fn rewrite_tracks_occurrence_indices_for_reused_params() {
+        // `WHERE x = $1 OR y = $1` must produce two `?` placeholders AND
+        // report [1, 1] so the bind chain binds params[idx=1] twice.
+        let (sql, idx) = SqlxBackend::MySql.rewrite_placeholders("WHERE x = $1 OR y = $1");
+        assert_eq!(sql, "WHERE x = ? OR y = ?");
+        assert_eq!(idx, vec![1, 1]);
+    }
+
+    #[test]
+    fn rewrite_tracks_occurrence_indices_for_out_of_order_params() {
+        // `WHERE b = $2 AND a = $1` must report [2, 1] so the bind chain
+        // binds params[idx=2] first, then params[idx=1].
+        let (sql, idx) = SqlxBackend::Sqlite.rewrite_placeholders("WHERE b = $2 AND a = $1");
+        assert_eq!(sql, "WHERE b = ? AND a = ?");
+        assert_eq!(idx, vec![2, 1]);
     }
 
     #[test]

@@ -15,7 +15,91 @@ use crate::utils::pascal_case;
 
 use super::structs::go_imports_for_columns;
 
-pub struct DatabaseSqlGenerator;
+/// Go's `database/sql` package is driver-agnostic — any third-party driver
+/// can plug into the same interface. The generated code is identical across
+/// backends; only the SQL placeholder style differs (Postgres uses `$1,
+/// $2, ...`; MySQL and SQLite use `?`). `DatabaseSqlBackend` parameterizes
+/// which placeholder style the generated SQL constant uses.
+#[derive(Debug, Clone, Copy)]
+pub enum DatabaseSqlBackend {
+    Postgres,
+    MySql,
+    Sqlite,
+}
+
+impl DatabaseSqlBackend {
+    /// Rewrite `$N` placeholders to the style this backend expects. For
+    /// Postgres, returns the SQL unchanged with empty occurrence indices.
+    /// For MySQL/SQLite, replaces every `$N` outside a single-quoted
+    /// string literal with `?`, and returns the `$N` indices in document
+    /// order so callers can emit args in positional order (handles reused
+    /// and out-of-order params correctly).
+    fn rewrite_placeholders(self, sql: &str) -> (String, Vec<u32>) {
+        match self {
+            DatabaseSqlBackend::Postgres => (sql.to_string(), Vec::new()),
+            DatabaseSqlBackend::MySql | DatabaseSqlBackend::Sqlite => {
+                let mut out = String::with_capacity(sql.len());
+                let mut indices = Vec::new();
+                let mut chars = sql.chars().peekable();
+                let mut in_string = false;
+                while let Some(c) = chars.next() {
+                    if c == '\'' {
+                        if in_string && chars.peek() == Some(&'\'') {
+                            out.push(c);
+                            out.push(chars.next().unwrap());
+                            continue;
+                        }
+                        in_string = !in_string;
+                        out.push(c);
+                        continue;
+                    }
+                    if !in_string && c == '$' && chars.peek().is_some_and(|ch| ch.is_ascii_digit())
+                    {
+                        let mut num = String::new();
+                        while chars.peek().is_some_and(|ch| ch.is_ascii_digit()) {
+                            num.push(chars.next().unwrap());
+                        }
+                        indices.push(num.parse::<u32>().unwrap_or(0));
+                        out.push('?');
+                    } else {
+                        out.push(c);
+                    }
+                }
+                (out, indices)
+            }
+        }
+    }
+}
+
+pub struct DatabaseSqlGenerator {
+    backend: DatabaseSqlBackend,
+}
+
+impl DatabaseSqlGenerator {
+    pub fn postgres() -> Self {
+        Self {
+            backend: DatabaseSqlBackend::Postgres,
+        }
+    }
+
+    pub fn mysql() -> Self {
+        Self {
+            backend: DatabaseSqlBackend::MySql,
+        }
+    }
+
+    pub fn sqlite() -> Self {
+        Self {
+            backend: DatabaseSqlBackend::Sqlite,
+        }
+    }
+}
+
+impl Default for DatabaseSqlGenerator {
+    fn default() -> Self {
+        Self::postgres()
+    }
+}
 
 // ── Client file ───────────────────────────────────────────────────────────────
 
@@ -46,21 +130,46 @@ func New(db DBTX) *Queries {
 
 // ── Query generation ──────────────────────────────────────────────────────────
 
-/// Generate a full query function.
-fn generate_query_function(query: &QueryDef) -> String {
+/// Generate a full query function. `backend` determines the placeholder
+/// style in the emitted SQL constant.
+fn generate_query_function(backend: DatabaseSqlBackend, query: &QueryDef) -> String {
     let const_name = sql_const_name(&query.name);
     let func_name = pascal_case(&query.name);
     let params = func_params(query);
-    let args = query_args(query);
 
     let mut parts: Vec<String> = Vec::new();
 
-    // SQL constant
+    // SQL constant — placeholder style depends on backend.
+    let (rewritten_sql, occurrence_indices) = backend.rewrite_placeholders(&query.sql);
     parts.push(format!(
         "const {} = \"{}\"",
         const_name,
-        escape_sql(&query.sql),
+        escape_sql(&rewritten_sql),
     ));
+
+    // Args — Postgres binds each unique param once (query_args default),
+    // MySQL/SQLite bind one arg per placeholder occurrence (handles reused
+    // and out-of-order $N correctly).
+    let args = if occurrence_indices.is_empty() {
+        query_args(query)
+    } else {
+        let names: Vec<String> = occurrence_indices
+            .iter()
+            .map(|idx| {
+                query
+                    .params
+                    .iter()
+                    .find(|p| p.index == *idx)
+                    .map(|p| p.name.clone())
+                    .unwrap_or_else(|| "nil".to_string())
+            })
+            .collect();
+        if names.is_empty() {
+            String::new()
+        } else {
+            format!(", {}", names.join(", "))
+        }
+    };
 
     match query.command {
         QueryCommand::One => {
@@ -195,7 +304,10 @@ impl DatabaseSqlGenerator {
             format!("\nimport (\n{}\n)\n", lines.join("\n"))
         };
 
-        let functions: Vec<String> = queries.iter().map(generate_query_function).collect();
+        let functions: Vec<String> = queries
+            .iter()
+            .map(|q| generate_query_function(self.backend, q))
+            .collect();
 
         let mut content = String::new();
         content.push_str("// Code generated by sqlcx. DO NOT EDIT.\npackage db\n");
@@ -268,7 +380,7 @@ mod tests {
 
     #[test]
     fn generates_client_file() {
-        let gen_ = DatabaseSqlGenerator;
+        let gen_ = DatabaseSqlGenerator::postgres();
         let content = gen_.generate_client();
         assert!(content.contains("type DBTX interface"));
         assert!(content.contains("type Queries struct"));
@@ -279,12 +391,113 @@ mod tests {
     #[test]
     fn generates_query_file() {
         let ir = parse_fixture_ir();
-        let gen_ = DatabaseSqlGenerator;
+        let gen_ = DatabaseSqlGenerator::postgres();
         let content = gen_.generate_query_file(&ir.queries);
         assert!(content.contains("func (q *Queries) GetUser"));
         assert!(content.contains("func (q *Queries) ListUsers"));
         assert!(content.contains("func (q *Queries) CreateUser"));
         assert!(content.contains("func (q *Queries) DeleteUser"));
+        // Postgres keeps $N placeholders.
+        assert!(content.contains("WHERE id = $1"));
         insta::assert_snapshot!("go_database_sql_queries", content);
+    }
+
+    #[test]
+    fn mysql_backend_rewrites_placeholders_to_question_marks() {
+        let ir = parse_fixture_ir();
+        let gen_ = DatabaseSqlGenerator::mysql();
+        let content = gen_.generate_query_file(&ir.queries);
+        // MySQL: `$1` → `?`.
+        assert!(content.contains("WHERE id = ?"));
+        assert!(!content.contains("WHERE id = $1"));
+        insta::assert_snapshot!("go_database_sql_mysql_queries", content);
+    }
+
+    #[test]
+    fn sqlite_backend_rewrites_placeholders_to_question_marks() {
+        let ir = parse_fixture_ir();
+        let gen_ = DatabaseSqlGenerator::sqlite();
+        let content = gen_.generate_query_file(&ir.queries);
+        assert!(content.contains("WHERE id = ?"));
+        assert!(!content.contains("WHERE id = $1"));
+        insta::assert_snapshot!("go_database_sql_sqlite_queries", content);
+    }
+
+    #[test]
+    fn placeholder_rewrite_preserves_dollar_in_string_literals() {
+        let (rewritten, idx) =
+            DatabaseSqlBackend::MySql.rewrite_placeholders("SELECT '$1' FROM x WHERE a = $1");
+        assert_eq!(rewritten, "SELECT '$1' FROM x WHERE a = ?");
+        assert_eq!(idx, vec![1]);
+    }
+
+    #[test]
+    fn reused_param_emits_repeated_args_in_mysql() {
+        // WHERE x = $1 OR y = $1 must produce two `?` AND pass the arg twice.
+        use crate::ir::{ParamDef, SqlType, SqlTypeCategory};
+        let query = QueryDef {
+            name: "Search".to_string(),
+            command: QueryCommand::Many,
+            sql: "SELECT id FROM users WHERE name = $1 OR email = $1".to_string(),
+            params: vec![ParamDef {
+                index: 1,
+                name: "q".to_string(),
+                sql_type: SqlType {
+                    raw: "text".to_string(),
+                    normalized: "text".to_string(),
+                    category: SqlTypeCategory::String,
+                    element_type: None,
+                    enum_name: None,
+                    enum_values: None,
+                    json_shape: None,
+                },
+            }],
+            returns: vec![],
+            source_file: "q.sql".to_string(),
+        };
+        let out = generate_query_function(DatabaseSqlBackend::MySql, &query);
+        // Two `?` in the SQL const.
+        assert_eq!(out.matches('?').count(), 2);
+        // Two `q` args in the Query/Exec call.
+        assert!(out.contains(", q, q)"), "expected `, q, q)` in: {out}");
+    }
+
+    #[test]
+    fn out_of_order_params_bind_in_document_order_in_sqlite() {
+        // WHERE b = $2 AND a = $1 — first ? binds param with index 2,
+        // second binds param with index 1.
+        use crate::ir::{ParamDef, SqlType, SqlTypeCategory};
+        let int_type = SqlType {
+            raw: "integer".to_string(),
+            normalized: "integer".to_string(),
+            category: SqlTypeCategory::Number,
+            element_type: None,
+            enum_name: None,
+            enum_values: None,
+            json_shape: None,
+        };
+        let query = QueryDef {
+            name: "Range".to_string(),
+            command: QueryCommand::Many,
+            sql: "SELECT id FROM t WHERE b = $2 AND a = $1".to_string(),
+            params: vec![
+                ParamDef {
+                    index: 1,
+                    name: "a".to_string(),
+                    sql_type: int_type.clone(),
+                },
+                ParamDef {
+                    index: 2,
+                    name: "b".to_string(),
+                    sql_type: int_type,
+                },
+            ],
+            returns: vec![],
+            source_file: "q.sql".to_string(),
+        };
+        let out = generate_query_function(DatabaseSqlBackend::Sqlite, &query);
+        // Must be `, b, a)` (document order), NOT `, a, b)` (param-index order).
+        assert!(out.contains(", b, a)"), "expected `, b, a)` in: {out}");
+        assert!(!out.contains(", a, b)"));
     }
 }

@@ -6,6 +6,7 @@ use regex::Regex;
 use crate::annotations::extract_annotations;
 use crate::error::Result;
 use crate::ir::{ColumnDef, EnumDef, QueryDef, SqlType, SqlTypeCategory, TableDef};
+use crate::parser::joins::{has_outer_join, resolve_multi_table_columns};
 use crate::parser::{
     build_params, ensure_supported_select_expr, make_unknown_column, split_column_defs,
     split_query_blocks, DatabaseParser,
@@ -442,6 +443,7 @@ fn find_from_table<'a>(sql: &str, tables: &'a [TableDef]) -> Option<&'a TableDef
 fn resolve_return_columns(
     sql: &str,
     table: Option<&TableDef>,
+    schema_tables: &[TableDef],
     source_file: &str,
 ) -> Result<Vec<ColumnDef>> {
     if !SELECT_RE.is_match(sql) {
@@ -452,6 +454,13 @@ fn resolve_return_columns(
         return Ok(Vec::new());
     };
     let cols_part = cap[1].trim();
+
+    // Multi-table JOIN path: route qualified columns through the shared
+    // resolver when the outer FROM contains a JOIN. `has_outer_join` scopes
+    // the check to the outer FROM body so subquery JOINs don't false-trigger.
+    if has_outer_join(sql) {
+        return resolve_multi_table_columns(cols_part, sql, schema_tables, source_file);
+    }
 
     if cols_part == "*" {
         return Ok(table.map(|t| t.columns.clone()).unwrap_or_default());
@@ -533,7 +542,7 @@ impl DatabaseParser for MySqlParser {
             let param_indices = extract_param_indices(&block.sql);
             let inferred_cols = infer_param_columns(&block.sql);
             let params = build_params(&block.comments, table, param_indices, inferred_cols);
-            let returns = resolve_return_columns(&block.sql, table, source_file)?;
+            let returns = resolve_return_columns(&block.sql, table, tables, source_file)?;
 
             let clean_sql = block
                 .sql
@@ -688,5 +697,48 @@ mod tests {
             .unwrap();
         assert_eq!(dr.params[0].name, "start_date");
         assert_eq!(dr.params[1].name, "end_date");
+    }
+
+    // ── INNER JOIN path tests ────────────────────────────────────────────────
+
+    fn join_schema() -> &'static str {
+        "CREATE TABLE users (id INT PRIMARY KEY, name VARCHAR(255) NOT NULL, org_id INT NOT NULL);\n\
+         CREATE TABLE orgs (id INT PRIMARY KEY, slug VARCHAR(255) NOT NULL);"
+    }
+
+    #[test]
+    fn inner_join_resolves_qualified_columns() {
+        let parser = MySqlParser::new();
+        let (tables, enums) = parser.parse_schema(join_schema()).unwrap();
+        let sql = "-- name: GetUserWithOrg :one\nSELECT users.name, orgs.slug FROM users INNER JOIN orgs ON users.org_id = orgs.id WHERE users.id = ?;";
+        let queries = parser.parse_queries(sql, &tables, &enums, "q.sql").unwrap();
+        assert_eq!(queries[0].returns.len(), 2);
+        assert_eq!(queries[0].returns[0].source_table.as_deref(), Some("users"));
+        assert_eq!(queries[0].returns[1].source_table.as_deref(), Some("orgs"));
+    }
+
+    #[test]
+    fn inner_join_rejects_select_star() {
+        let parser = MySqlParser::new();
+        let (tables, enums) = parser.parse_schema(join_schema()).unwrap();
+        let sql =
+            "-- name: All :many\nSELECT * FROM users INNER JOIN orgs ON users.org_id = orgs.id;";
+        let err = parser
+            .parse_queries(sql, &tables, &enums, "q.sql")
+            .unwrap_err();
+        assert!(err
+            .to_string()
+            .contains("SELECT * across multi-table JOINs"));
+    }
+
+    #[test]
+    fn left_join_rejected_with_v12_pointer() {
+        let parser = MySqlParser::new();
+        let (tables, enums) = parser.parse_schema(join_schema()).unwrap();
+        let sql = "-- name: WithLeft :many\nSELECT users.id FROM users LEFT JOIN orgs ON users.org_id = orgs.id;";
+        let err = parser
+            .parse_queries(sql, &tables, &enums, "q.sql")
+            .unwrap_err();
+        assert!(err.to_string().contains("v1.1 supports INNER JOIN only"));
     }
 }

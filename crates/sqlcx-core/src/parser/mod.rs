@@ -1,3 +1,4 @@
+pub mod joins;
 pub mod mysql;
 pub mod postgres;
 pub mod sqlite;

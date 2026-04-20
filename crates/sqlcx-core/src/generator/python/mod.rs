@@ -1,5 +1,6 @@
 pub mod asyncpg;
 pub mod common;
+pub mod mysql_connector;
 pub mod psycopg;
 pub mod pydantic;
 pub mod sqlite3_driver;
@@ -40,6 +41,7 @@ fn resolve_driver(name: &str) -> Result<Option<Box<dyn DriverGenerator>>> {
         "psycopg" => Ok(Some(Box::new(psycopg::PsycopgGenerator))),
         "asyncpg" => Ok(Some(Box::new(asyncpg::AsyncpgGenerator))),
         "sqlite3" => Ok(Some(Box::new(sqlite3_driver::Sqlite3Generator))),
+        "mysql-connector" => Ok(Some(Box::new(mysql_connector::MysqlConnectorGenerator))),
         _ => Err(SqlcxError::UnknownDriver(name.to_string())),
     }
 }

@@ -128,7 +128,15 @@ pub fn has_outer_join(sql: &str) -> bool {
 /// SELECT, and call this function to build the typed `ColumnDef` list.
 ///
 /// Rejects `SELECT *` across joins with a v1.2 pointer — listing
-/// qualified columns explicitly is required in v1.1.
+/// qualified columns explicitly is required.
+///
+/// Also rejects unaliased name collisions across joined tables. If two
+/// selected columns share the same effective name (e.g. `users.id` and
+/// `orgs.id`) without an explicit `AS` alias, the generated row type
+/// would have duplicate fields and the underlying driver (sqlx derive,
+/// Go `db` tag, etc) couldn't scan them correctly. Users must write
+/// `SELECT users.id AS user_id, orgs.id AS org_id ...`, matching sqlc's
+/// convention.
 pub fn resolve_multi_table_columns(
     cols_part: &str,
     sql: &str,
@@ -146,10 +154,43 @@ pub fn resolve_multi_table_columns(
 
     let alias_map = parse_join_clauses(sql, schema_tables, source_file)?;
 
-    cols_part
+    let columns: Vec<ColumnDef> = cols_part
         .split(',')
         .map(|s| resolve_multi_table_select_column(s.trim(), &alias_map, source_file))
-        .collect()
+        .collect::<Result<_>>()?;
+
+    reject_unaliased_collisions(&columns, source_file)?;
+
+    Ok(columns)
+}
+
+fn reject_unaliased_collisions(columns: &[ColumnDef], source_file: &str) -> Result<()> {
+    use std::collections::HashMap;
+
+    let mut first_seen: HashMap<String, (&str, Option<&str>)> = HashMap::new();
+    for col in columns {
+        let effective = col.alias.as_deref().unwrap_or(&col.name).to_lowercase();
+        if let Some((prev_source, _)) = first_seen.get(&effective) {
+            let this_source = col.source_table.as_deref().unwrap_or("?");
+            return Err(SqlcxError::ParseError {
+                file: source_file.to_string(),
+                message: format!(
+                    "joined columns `{prev_source}.{effective}` and `{this_source}.{effective}` \
+                     produce the same field name. Add explicit `AS` aliases to disambiguate, e.g. \
+                     `{prev_source}.{effective} AS {prev_source}_{effective}, \
+                     {this_source}.{effective} AS {this_source}_{effective}`."
+                ),
+            });
+        }
+        first_seen.insert(
+            effective,
+            (
+                col.source_table.as_deref().unwrap_or("?"),
+                col.alias.as_deref(),
+            ),
+        );
+    }
+    Ok(())
 }
 
 /// Walk a query's FROM clause and return the alias → table mapping.
@@ -498,5 +539,42 @@ mod tests {
         let map = parse_join_clauses("SELECT * FROM users", &tables, "q.sql").unwrap();
         let err = resolve_multi_table_select_column("users.ghost", &map, "q.sql").unwrap_err();
         assert!(err.to_string().contains("column `ghost` not found"));
+    }
+
+    #[test]
+    fn rejects_unaliased_collision() {
+        let tables = vec![table("users", &["id"]), table("orgs", &["id"])];
+        let sql = "SELECT users.id, orgs.id FROM users INNER JOIN orgs ON users.id = orgs.id";
+        let err =
+            resolve_multi_table_columns("users.id, orgs.id", sql, &tables, "q.sql").unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("produce the same field name"));
+        assert!(msg.contains("AS"));
+        assert!(msg.contains("users_id"));
+    }
+
+    #[test]
+    fn accepts_colliding_columns_with_aliases() {
+        let tables = vec![table("users", &["id"]), table("orgs", &["id"])];
+        let sql = "SELECT users.id AS user_id, orgs.id AS org_id FROM users INNER JOIN orgs ON users.id = orgs.id";
+        let cols = resolve_multi_table_columns(
+            "users.id AS user_id, orgs.id AS org_id",
+            sql,
+            &tables,
+            "q.sql",
+        )
+        .unwrap();
+        assert_eq!(cols.len(), 2);
+        assert_eq!(cols[0].alias.as_deref(), Some("user_id"));
+        assert_eq!(cols[1].alias.as_deref(), Some("org_id"));
+    }
+
+    #[test]
+    fn accepts_distinct_names_without_aliases() {
+        let tables = vec![table("users", &["id"]), table("orgs", &["slug"])];
+        let sql = "SELECT users.id, orgs.slug FROM users INNER JOIN orgs ON users.id = orgs.id";
+        let cols =
+            resolve_multi_table_columns("users.id, orgs.slug", sql, &tables, "q.sql").unwrap();
+        assert_eq!(cols.len(), 2);
     }
 }

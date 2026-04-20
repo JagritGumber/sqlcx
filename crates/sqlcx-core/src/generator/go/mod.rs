@@ -33,7 +33,11 @@ fn resolve_schema(name: &str) -> Result<Box<dyn SchemaGenerator>> {
 
 fn resolve_driver(name: &str) -> Result<Box<dyn DriverGenerator>> {
     match name {
-        "database-sql" => Ok(Box::new(database_sql::DatabaseSqlGenerator)),
+        "database-sql" | "database-sql-postgres" => {
+            Ok(Box::new(database_sql::DatabaseSqlGenerator::postgres()))
+        }
+        "database-sql-mysql" => Ok(Box::new(database_sql::DatabaseSqlGenerator::mysql())),
+        "database-sql-sqlite" => Ok(Box::new(database_sql::DatabaseSqlGenerator::sqlite())),
         "pgx" => Ok(Box::new(pgx::PgxGenerator)),
         _ => Err(SqlcxError::UnknownDriver(name.to_string())),
     }

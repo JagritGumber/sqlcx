@@ -128,7 +128,15 @@ pub fn has_outer_join(sql: &str) -> bool {
 /// SELECT, and call this function to build the typed `ColumnDef` list.
 ///
 /// Rejects `SELECT *` across joins with a v1.2 pointer — listing
-/// qualified columns explicitly is required in v1.1.
+/// qualified columns explicitly is required.
+///
+/// Also rejects unaliased name collisions across joined tables. If two
+/// selected columns share the same effective name (e.g. `users.id` and
+/// `orgs.id`) without an explicit `AS` alias, the generated row type
+/// would have duplicate fields and the underlying driver (sqlx derive,
+/// Go `db` tag, etc) couldn't scan them correctly. Users must write
+/// `SELECT users.id AS user_id, orgs.id AS org_id ...`, matching sqlc's
+/// convention.
 pub fn resolve_multi_table_columns(
     cols_part: &str,
     sql: &str,
@@ -146,10 +154,61 @@ pub fn resolve_multi_table_columns(
 
     let alias_map = parse_join_clauses(sql, schema_tables, source_file)?;
 
-    cols_part
+    let columns: Vec<ColumnDef> = cols_part
         .split(',')
         .map(|s| resolve_multi_table_select_column(s.trim(), &alias_map, source_file))
-        .collect()
+        .collect::<Result<_>>()?;
+
+    reject_unaliased_collisions(&columns, source_file)?;
+
+    Ok(columns)
+}
+
+fn reject_unaliased_collisions(columns: &[ColumnDef], source_file: &str) -> Result<()> {
+    use std::collections::HashMap;
+
+    // Value tuple: (actual column name, source table, whether user supplied an alias).
+    // We need the column name separately from the effective field name because
+    // when a collision happens via aliases (e.g. `users.id AS uid` and `orgs.id AS uid`),
+    // the effective name `uid` is NOT a valid column reference — the error message
+    // must fall back to the real column + source table it came from.
+    let mut first_seen: HashMap<String, (String, String, bool)> = HashMap::new();
+    for col in columns {
+        let effective = col.alias.as_deref().unwrap_or(&col.name).to_lowercase();
+        if let Some((prev_col, prev_source, prev_had_alias)) = first_seen.get(&effective) {
+            let this_source = col.source_table.as_deref().unwrap_or("?").to_string();
+            let this_col = &col.name;
+            let this_had_alias = col.alias.is_some();
+
+            let message = if *prev_had_alias || this_had_alias {
+                format!(
+                    "two joined columns produce the same field name `{effective}` — one or \
+                     both use an explicit AS alias that collides. Choose distinct aliases \
+                     so the generated row type has unique fields."
+                )
+            } else {
+                format!(
+                    "joined columns `{prev_source}.{prev_col}` and `{this_source}.{this_col}` \
+                     produce the same field name. Add explicit `AS` aliases to disambiguate, \
+                     e.g. `{prev_source}.{prev_col} AS {prev_source}_{prev_col}, \
+                     {this_source}.{this_col} AS {this_source}_{this_col}`."
+                )
+            };
+            return Err(SqlcxError::ParseError {
+                file: source_file.to_string(),
+                message,
+            });
+        }
+        first_seen.insert(
+            effective,
+            (
+                col.name.clone(),
+                col.source_table.as_deref().unwrap_or("?").to_string(),
+                col.alias.is_some(),
+            ),
+        );
+    }
+    Ok(())
 }
 
 /// Walk a query's FROM clause and return the alias → table mapping.
@@ -498,5 +557,64 @@ mod tests {
         let map = parse_join_clauses("SELECT * FROM users", &tables, "q.sql").unwrap();
         let err = resolve_multi_table_select_column("users.ghost", &map, "q.sql").unwrap_err();
         assert!(err.to_string().contains("column `ghost` not found"));
+    }
+
+    #[test]
+    fn rejects_unaliased_collision() {
+        let tables = vec![table("users", &["id"]), table("orgs", &["id"])];
+        let sql = "SELECT users.id, orgs.id FROM users INNER JOIN orgs ON users.id = orgs.id";
+        let err =
+            resolve_multi_table_columns("users.id, orgs.id", sql, &tables, "q.sql").unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("produce the same field name"));
+        assert!(msg.contains("AS"));
+        assert!(msg.contains("users_id"));
+    }
+
+    #[test]
+    fn accepts_colliding_columns_with_aliases() {
+        let tables = vec![table("users", &["id"]), table("orgs", &["id"])];
+        let sql = "SELECT users.id AS user_id, orgs.id AS org_id FROM users INNER JOIN orgs ON users.id = orgs.id";
+        let cols = resolve_multi_table_columns(
+            "users.id AS user_id, orgs.id AS org_id",
+            sql,
+            &tables,
+            "q.sql",
+        )
+        .unwrap();
+        assert_eq!(cols.len(), 2);
+        assert_eq!(cols[0].alias.as_deref(), Some("user_id"));
+        assert_eq!(cols[1].alias.as_deref(), Some("org_id"));
+    }
+
+    #[test]
+    fn accepts_distinct_names_without_aliases() {
+        let tables = vec![table("users", &["id"]), table("orgs", &["slug"])];
+        let sql = "SELECT users.id, orgs.slug FROM users INNER JOIN orgs ON users.id = orgs.id";
+        let cols =
+            resolve_multi_table_columns("users.id, orgs.slug", sql, &tables, "q.sql").unwrap();
+        assert_eq!(cols.len(), 2);
+    }
+
+    #[test]
+    fn rejects_alias_collision_with_non_column_message() {
+        // When users alias two different columns to the same name, the
+        // error message must NOT reference the alias as if it were a
+        // column (e.g. `users.uid` is nonsensical when uid is an alias).
+        let tables = vec![table("users", &["id"]), table("orgs", &["id"])];
+        let sql = "SELECT users.id AS uid, orgs.id AS uid FROM users INNER JOIN orgs ON users.id = orgs.id";
+        let err =
+            resolve_multi_table_columns("users.id AS uid, orgs.id AS uid", sql, &tables, "q.sql")
+                .unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("field name `uid`"), "msg: {msg}");
+        assert!(
+            !msg.contains("users.uid"),
+            "must not reference alias as column: {msg}"
+        );
+        assert!(
+            !msg.contains("orgs.uid"),
+            "must not reference alias as column: {msg}"
+        );
     }
 }

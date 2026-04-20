@@ -2,6 +2,7 @@ pub mod asyncpg;
 pub mod common;
 pub mod psycopg;
 pub mod pydantic;
+pub mod sqlite3_driver;
 
 use crate::config::TargetConfig;
 use crate::error::{Result, SqlcxError};
@@ -38,6 +39,7 @@ fn resolve_driver(name: &str) -> Result<Option<Box<dyn DriverGenerator>>> {
         "none" => Ok(None),
         "psycopg" => Ok(Some(Box::new(psycopg::PsycopgGenerator))),
         "asyncpg" => Ok(Some(Box::new(asyncpg::AsyncpgGenerator))),
+        "sqlite3" => Ok(Some(Box::new(sqlite3_driver::Sqlite3Generator))),
         _ => Err(SqlcxError::UnknownDriver(name.to_string())),
     }
 }

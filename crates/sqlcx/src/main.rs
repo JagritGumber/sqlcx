@@ -4,9 +4,9 @@ mod migrate_cmd;
 use clap::{Parser, Subcommand};
 use schemars::schema_for;
 use sqlcx::run_pipeline;
+use sqlcx_core::config::SqlcxConfig;
 #[cfg(feature = "migrate")]
 use sqlcx_core::config::load_config;
-use sqlcx_core::config::SqlcxConfig;
 
 #[derive(Parser)]
 #[command(

@@ -342,8 +342,8 @@ impl SchemaGenerator for PydanticGenerator {
 mod tests {
     use super::*;
     use crate::ir::*;
-    use crate::parser::postgres::PostgresParser;
     use crate::parser::DatabaseParser;
+    use crate::parser::postgres::PostgresParser;
     use std::collections::HashMap;
 
     fn parse_fixture_ir() -> SqlcxIR {
@@ -360,8 +360,8 @@ mod tests {
     #[test]
     fn generates_models_file() {
         let ir = parse_fixture_ir();
-        let gen = PydanticGenerator;
-        let content = gen.generate_models_file(&ir, &HashMap::new());
+        let gen_ = PydanticGenerator;
+        let content = gen_.generate_models_file(&ir, &HashMap::new());
         assert!(content.contains("from pydantic import BaseModel, ConfigDict"));
         assert!(content.contains("from enum import Enum"));
         assert!(content.contains("class UserStatus(str, Enum):"));

@@ -14,4 +14,4 @@ pub mod types;
 
 pub use query_fn::{generate_driver_files, generate_query_function, generate_query_functions_file};
 pub use sql_escape::json_stringify;
-pub use types::{generate_params_type, generate_row_type, ts_type, TsTypeMap};
+pub use types::{TsTypeMap, generate_params_type, generate_row_type, ts_type};

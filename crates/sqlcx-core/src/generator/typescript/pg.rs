@@ -5,7 +5,7 @@
 // driver-specific piece is the client.ts content.
 
 use crate::error::Result;
-use crate::generator::typescript::common::{generate_driver_files, TsTypeMap};
+use crate::generator::typescript::common::{TsTypeMap, generate_driver_files};
 use crate::generator::{DriverGenerator, GeneratedFile};
 use crate::ir::SqlcxIR;
 
@@ -63,8 +63,8 @@ impl DriverGenerator for PgGenerator {
 mod tests {
     use super::*;
     use crate::ir::*;
-    use crate::parser::postgres::PostgresParser;
     use crate::parser::DatabaseParser;
+    use crate::parser::postgres::PostgresParser;
 
     fn parse_fixture_ir() -> SqlcxIR {
         let schema_sql = include_str!("../../../../../tests/fixtures/schema.sql");
@@ -83,8 +83,8 @@ mod tests {
 
     #[test]
     fn generates_pg_client() {
-        let gen = PgGenerator;
-        let content = gen.generate_client();
+        let gen_ = PgGenerator;
+        let content = gen_.generate_client();
         assert!(content.contains("import { Pool"));
         assert!(content.contains("export class PgClient implements DatabaseClient"));
         assert!(content.contains("result.rows"));
@@ -95,8 +95,8 @@ mod tests {
     #[test]
     fn generates_pg_query_functions() {
         let ir = parse_fixture_ir();
-        let gen = PgGenerator;
-        let files = gen.generate(&ir).unwrap();
+        let gen_ = PgGenerator;
+        let files = gen_.generate(&ir).unwrap();
         let query_file = files
             .iter()
             .find(|f| f.path.ends_with(".queries.ts"))

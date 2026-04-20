@@ -228,8 +228,8 @@ impl DriverGenerator for PgxGenerator {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::parser::postgres::PostgresParser;
     use crate::parser::DatabaseParser;
+    use crate::parser::postgres::PostgresParser;
 
     fn parse_fixture_ir() -> SqlcxIR {
         let schema_sql = include_str!("../../../../../tests/fixtures/schema.sql");
@@ -248,8 +248,8 @@ mod tests {
 
     #[test]
     fn generates_client_file() {
-        let gen = PgxGenerator;
-        let content = gen.generate_client();
+        let gen_ = PgxGenerator;
+        let content = gen_.generate_client();
         assert!(content.contains("github.com/jackc/pgx/v5"));
         assert!(content.contains("type DBTX interface"));
         insta::assert_snapshot!("go_pgx_client", content);
@@ -258,8 +258,8 @@ mod tests {
     #[test]
     fn generates_query_file() {
         let ir = parse_fixture_ir();
-        let gen = PgxGenerator;
-        let content = gen.generate_query_file(&ir.queries);
+        let gen_ = PgxGenerator;
+        let content = gen_.generate_query_file(&ir.queries);
         assert!(content.contains("func (q *Queries) GetUser"));
         assert!(content.contains("func (q *Queries) ListUsers"));
         insta::assert_snapshot!("go_pgx_queries", content);

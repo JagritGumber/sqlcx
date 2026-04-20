@@ -7,10 +7,10 @@
 
 use serde::{Deserialize, Serialize};
 use sqlcx_core::{
-    cache::{compute_hash, read_cache, write_cache, SqlFile},
-    config::{load_config, SqlcxConfig, TargetConfig},
-    generator::resolve_language,
+    cache::{SqlFile, compute_hash, read_cache, write_cache},
+    config::{SqlcxConfig, TargetConfig, load_config},
     generator::GeneratedFile,
+    generator::resolve_language,
     ir::SqlcxIR,
     parser::resolve_parser,
 };
@@ -154,11 +154,7 @@ fn sync_generated_files(
 
 fn resolve_path(base: &Path, s: &str) -> PathBuf {
     let p = PathBuf::from(s);
-    if p.is_absolute() {
-        p
-    } else {
-        base.join(p)
-    }
+    if p.is_absolute() { p } else { base.join(p) }
 }
 
 fn collect_sql_files(sql_dir: &Path) -> sqlcx_core::error::Result<Vec<PathBuf>> {

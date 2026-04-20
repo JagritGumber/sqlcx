@@ -10,10 +10,10 @@ use std::collections::BTreeMap;
 use std::path::Path;
 
 use crate::error::Result;
-use crate::generator::typescript::common::{
-    generate_params_type, generate_row_type, json_stringify, TsTypeMap,
-};
 use crate::generator::GeneratedFile;
+use crate::generator::typescript::common::{
+    TsTypeMap, generate_params_type, generate_row_type, json_stringify,
+};
 use crate::ir::{QueryCommand, QueryDef, SqlcxIR};
 use crate::utils::{camel_case, pascal_case};
 

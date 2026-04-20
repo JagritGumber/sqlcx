@@ -272,8 +272,8 @@ pub fn go_imports_for_columns(columns: &[ColumnDef]) -> BTreeSet<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::parser::postgres::PostgresParser;
     use crate::parser::DatabaseParser;
+    use crate::parser::postgres::PostgresParser;
     use std::collections::HashMap;
 
     fn parse_fixture_ir() -> SqlcxIR {
@@ -290,8 +290,8 @@ mod tests {
     #[test]
     fn generates_models_file() {
         let ir = parse_fixture_ir();
-        let gen = GoStructGenerator;
-        let content = gen.generate_models_file(&ir, &HashMap::new());
+        let gen_ = GoStructGenerator;
+        let content = gen_.generate_models_file(&ir, &HashMap::new());
         assert!(content.contains("package db"));
         assert!(content.contains("type Users struct {"));
         assert!(content.contains("type InsertUsers struct {"));

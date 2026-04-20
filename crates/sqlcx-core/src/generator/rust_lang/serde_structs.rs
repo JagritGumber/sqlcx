@@ -195,8 +195,8 @@ impl SchemaGenerator for SerdeStructGenerator {
 mod tests {
     use super::*;
     use crate::ir::*;
-    use crate::parser::postgres::PostgresParser;
     use crate::parser::DatabaseParser;
+    use crate::parser::postgres::PostgresParser;
     use std::collections::HashMap;
 
     fn parse_fixture_ir() -> SqlcxIR {
@@ -213,8 +213,8 @@ mod tests {
     #[test]
     fn generates_schema_file() {
         let ir = parse_fixture_ir();
-        let gen = SerdeStructGenerator;
-        let content = gen.generate_schema_file(&ir, &HashMap::new());
+        let gen_ = SerdeStructGenerator;
+        let content = gen_.generate_schema_file(&ir, &HashMap::new());
         assert!(content.contains("use serde::{Deserialize, Serialize};"));
         assert!(content.contains("pub struct Users {"));
         assert!(content.contains("pub struct InsertUsers {"));

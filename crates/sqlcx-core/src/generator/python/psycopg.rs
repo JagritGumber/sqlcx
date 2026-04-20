@@ -77,7 +77,9 @@ fn generate_query_function(query: &QueryDef) -> String {
                 format!("{} | None", type_name),
                 format!(
                     "    cur = conn.execute({}_SQL, {})\n    row = cur.fetchone()\n    if row is None:\n        return None\n    return {}(*row)",
-                    fn_name.to_uppercase(), params_arg, type_name
+                    fn_name.to_uppercase(),
+                    params_arg,
+                    type_name
                 ),
             )
         }
@@ -87,7 +89,9 @@ fn generate_query_function(query: &QueryDef) -> String {
                 format!("list[{}]", type_name),
                 format!(
                     "    cur = conn.execute({}_SQL, {})\n    return [{}(*row) for row in cur.fetchall()]",
-                    fn_name.to_uppercase(), params_arg, type_name
+                    fn_name.to_uppercase(),
+                    params_arg,
+                    type_name
                 ),
             )
         }
@@ -181,8 +185,8 @@ impl DriverGenerator for PsycopgGenerator {
 mod tests {
     use super::*;
     use crate::ir::*;
-    use crate::parser::postgres::PostgresParser;
     use crate::parser::DatabaseParser;
+    use crate::parser::postgres::PostgresParser;
 
     fn parse_fixture_ir() -> SqlcxIR {
         let schema_sql = include_str!("../../../../../tests/fixtures/schema.sql");
@@ -201,8 +205,8 @@ mod tests {
 
     #[test]
     fn generates_client_file() {
-        let gen = PsycopgGenerator;
-        let content = gen.generate_client();
+        let gen_ = PsycopgGenerator;
+        let content = gen_.generate_client();
         assert!(content.contains("psycopg"));
         assert!(content.contains("DO NOT EDIT"));
         insta::assert_snapshot!("psycopg_client", content);
@@ -211,8 +215,8 @@ mod tests {
     #[test]
     fn generates_query_functions() {
         let ir = parse_fixture_ir();
-        let gen = PsycopgGenerator;
-        let content = gen.generate_query_functions(&ir.queries);
+        let gen_ = PsycopgGenerator;
+        let content = gen_.generate_query_functions(&ir.queries);
         assert!(content.contains("def get_user"));
         assert!(content.contains("class GetUserRow"));
         assert!(content.contains("GET_USER_SQL"));

@@ -13,7 +13,7 @@ use crate::error::Result;
 use crate::ir::{
     ColumnDef, EnumDef, ParamDef, QueryCommand, QueryDef, SqlType, SqlTypeCategory, TableDef,
 };
-use crate::param_naming::{resolve_param_names, RawParam};
+use crate::param_naming::{RawParam, resolve_param_names};
 
 pub trait DatabaseParser {
     fn parse_schema(&self, sql: &str) -> Result<(Vec<TableDef>, Vec<EnumDef>)>;
@@ -138,13 +138,13 @@ pub(crate) fn split_query_blocks(sql: &str) -> Vec<QueryBlock> {
                 comment_buffer.push_str(trimmed);
                 comment_buffer.push('\n');
             }
-        } else if let Some(ref mut block) = current {
-            if !trimmed.is_empty() {
-                if !block.sql.is_empty() {
-                    block.sql.push(' ');
-                }
-                block.sql.push_str(trimmed);
+        } else if let Some(ref mut block) = current
+            && !trimmed.is_empty()
+        {
+            if !block.sql.is_empty() {
+                block.sql.push(' ');
             }
+            block.sql.push_str(trimmed);
         }
     }
 

@@ -36,7 +36,9 @@ fn resolve_schema(name: &str) -> Result<Box<dyn SchemaGenerator>> {
 
 fn resolve_driver(name: &str) -> Result<Box<dyn DriverGenerator>> {
     match name {
-        "sqlx" => Ok(Box::new(SqlxGenerator)),
+        "sqlx" | "sqlx-postgres" => Ok(Box::new(SqlxGenerator::postgres())),
+        "sqlx-mysql" => Ok(Box::new(SqlxGenerator::mysql())),
+        "sqlx-sqlite" => Ok(Box::new(SqlxGenerator::sqlite())),
         "tokio-postgres" => Ok(Box::new(tokio_postgres::TokioPostgresGenerator)),
         _ => Err(SqlcxError::UnknownDriver(name.to_string())),
     }

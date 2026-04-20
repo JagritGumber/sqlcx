@@ -39,6 +39,19 @@ jobs:
       - name: Install TypeScript globally (so npx tsc resolves from PATH)
         run: npm install -g typescript@5
 
+      - name: Install Python (for py_compile e2e tests)
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Go (for go build e2e tests)
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+          # Caching is skipped when go.sum is absent; `go build` inside each
+          # test lazily fetches pgx (stdlib drivers need no external deps).
+          cache: false
+
       - name: cargo fmt --check
         run: cargo fmt --all -- --check
 

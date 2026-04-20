@@ -174,6 +174,13 @@ fn generate_query_function(backend: SqlxBackend, query: &QueryDef) -> String {
     // placeholder occurrence in SQL order — reused or out-of-order $N in
     // the source Postgres SQL still produce correct behavior against the
     // rewritten `?` positional form.
+    //
+    // Non-Copy types (e.g. serde_json::Value for JSON columns, Vec<u8> for
+    // binary) would fail to compile if a reused param produced two moves of
+    // the same owned value. For any param index that appears more than once
+    // in occurrence_indices we emit `.bind(name.clone())` for every use
+    // after the first. Copy-typed params (i32, &str) accept `.clone()` too
+    // (it's a no-op), so applying uniformly to duplicates is safe.
     let binds: String = if occurrence_indices.is_empty() {
         query
             .params
@@ -181,6 +188,17 @@ fn generate_query_function(backend: SqlxBackend, query: &QueryDef) -> String {
             .map(|p| format!("\n        .bind({})", p.name))
             .collect()
     } else {
+        let mut seen: std::collections::HashSet<u32> = std::collections::HashSet::new();
+        let reused: std::collections::HashSet<u32> = {
+            let mut once = std::collections::HashSet::new();
+            let mut dup = std::collections::HashSet::new();
+            for idx in &occurrence_indices {
+                if !once.insert(*idx) {
+                    dup.insert(*idx);
+                }
+            }
+            dup
+        };
         occurrence_indices
             .iter()
             .map(|idx| {
@@ -190,7 +208,15 @@ fn generate_query_function(backend: SqlxBackend, query: &QueryDef) -> String {
                     .find(|p| p.index == *idx)
                     .map(|p| p.name.as_str())
                     .unwrap_or("unknown");
-                format!("\n        .bind({})", param_name)
+                let expr = if reused.contains(idx) && !seen.insert(*idx) {
+                    // Second or later occurrence of a reused param → clone.
+                    format!("{param_name}.clone()")
+                } else {
+                    // First occurrence (reused or not) → move/copy.
+                    seen.insert(*idx);
+                    param_name.to_string()
+                };
+                format!("\n        .bind({expr})")
             })
             .collect()
     };
@@ -418,6 +444,41 @@ mod tests {
         let (sql, idx) = SqlxBackend::Sqlite.rewrite_placeholders("WHERE b = $2 AND a = $1");
         assert_eq!(sql, "WHERE b = ? AND a = ?");
         assert_eq!(idx, vec![2, 1]);
+    }
+
+    #[test]
+    fn reused_param_in_mysql_body_emits_clone_on_duplicates() {
+        // Synthesize a QueryDef that reuses $1 twice. The MySQL bind chain
+        // must emit .bind(x).bind(x.clone()) so non-Copy types don't cause
+        // a moved-value compile error in the generated code.
+        let query = QueryDef {
+            name: "SearchUsers".to_string(),
+            command: QueryCommand::Many,
+            sql: "SELECT * FROM users WHERE name ILIKE $1 OR email ILIKE $1".to_string(),
+            params: vec![ParamDef {
+                index: 1,
+                name: "q".to_string(),
+                sql_type: SqlType {
+                    raw: "text".to_string(),
+                    normalized: "text".to_string(),
+                    category: SqlTypeCategory::String,
+                    element_type: None,
+                    enum_name: None,
+                    enum_values: None,
+                    json_shape: None,
+                },
+            }],
+            returns: vec![],
+            source_file: "q.sql".to_string(),
+        };
+        let out = generate_query_function(SqlxBackend::MySql, &query);
+        // First occurrence moves, second occurrence clones.
+        assert!(out.contains(".bind(q)"));
+        assert!(out.contains(".bind(q.clone())"));
+        // Postgres path never clones — it binds once per unique $N.
+        let out = generate_query_function(SqlxBackend::Postgres, &query);
+        assert!(out.contains(".bind(q)"));
+        assert!(!out.contains(".bind(q.clone())"));
     }
 
     #[test]

@@ -6,16 +6,11 @@ use regex::Regex;
 use crate::annotations::extract_annotations;
 use crate::error::Result;
 use crate::ir::{ColumnDef, EnumDef, QueryDef, SqlType, SqlTypeCategory, TableDef};
-use crate::parser::joins::{parse_join_clauses, resolve_multi_table_select_column};
+use crate::parser::joins::{has_outer_join, parse_join_clauses, resolve_multi_table_select_column};
 use crate::parser::{
     build_params, ensure_supported_select_expr, make_unknown_column, split_column_defs,
     split_query_blocks, DatabaseParser,
 };
-
-// Detect whether a query has a JOIN clause. When true, the multi-table
-// resolver path is used for SELECT columns. When false, the existing
-// single-table path runs unchanged.
-static JOIN_DETECT_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?i)\bJOIN\b").unwrap());
 
 // ── Static regex patterns ────────────────────────────────────────────────────
 
@@ -468,10 +463,11 @@ fn resolve_return_columns(
     };
     let cols_part = cap[1].trim();
 
-    // Multi-table JOIN path: when JOIN keyword is present, route each
-    // select expression through the multi-table resolver, which requires
-    // fully-qualified columns (e.g. `users.id`, `u.name AS user_name`).
-    if JOIN_DETECT_RE.is_match(sql) {
+    // Multi-table JOIN path: when the outer FROM contains a JOIN, route
+    // each select expression through the multi-table resolver. `has_outer_join`
+    // scopes the check to the outer FROM body so subqueries with JOINs
+    // (e.g. `WHERE id IN (SELECT ... JOIN ...)`) don't false-trigger.
+    if has_outer_join(sql) {
         return resolve_return_columns_multi_table(cols_part, sql, schema_tables, source_file);
     }
 
@@ -892,5 +888,20 @@ mod tests {
         assert!(err
             .to_string()
             .contains("qualified select expressions are not supported"));
+    }
+
+    #[test]
+    fn join_in_subquery_does_not_route_outer_to_multi_table() {
+        // The outer FROM is single-table (`users`). The JOIN lives inside
+        // a subquery. The outer query must use the single-table path — if
+        // we routed to the multi-table resolver, the unqualified outer
+        // `id` select would fail with "requires qualified columns".
+        let parser = PostgresParser::new();
+        let (tables, enums) = parser.parse_schema(join_schema()).unwrap();
+        let sql = "-- name: SubquerySafe :many\nSELECT id FROM users WHERE id IN (SELECT users.id FROM users INNER JOIN orgs ON users.org_id = orgs.id);";
+        let queries = parser.parse_queries(sql, &tables, &enums, "q.sql").unwrap();
+        assert_eq!(queries[0].returns.len(), 1);
+        assert_eq!(queries[0].returns[0].name, "id");
+        assert_eq!(queries[0].returns[0].source_table, None);
     }
 }

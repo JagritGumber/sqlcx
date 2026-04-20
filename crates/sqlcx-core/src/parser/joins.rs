@@ -87,9 +87,15 @@ static TABLE_REF_RE: LazyLock<Regex> = LazyLock::new(|| {
 });
 
 // Match unsupported join flavors so we can reject with a clear message.
+// Handles: LEFT/RIGHT/FULL/NATURAL/CROSS [INNER|OUTER]? JOIN, plain
+// OUTER JOIN, and USING(col) clauses. The optional INNER/OUTER between
+// the modifier and JOIN catches forms like `NATURAL INNER JOIN` and
+// `LEFT OUTER JOIN` that the previous regex missed.
 static UNSUPPORTED_JOIN_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"(?i)\b(LEFT|RIGHT|FULL|OUTER|NATURAL|CROSS)\s+(OUTER\s+)?JOIN\b|\bUSING\s*\(")
-        .unwrap()
+    Regex::new(
+        r"(?i)\b(LEFT|RIGHT|FULL|NATURAL|CROSS)\s+(?:(?:INNER|OUTER)\s+)?JOIN\b|\bOUTER\s+JOIN\b|\bUSING\s*\(",
+    )
+    .unwrap()
 });
 
 // Case-insensitive ` ON ` and ` AS ` separators. We use regex rather than
@@ -98,6 +104,22 @@ static UNSUPPORTED_JOIN_RE: LazyLock<Regex> = LazyLock::new(|| {
 // string panic at non-char-boundary positions.
 static ON_SEP_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?i)\s+ON\s+").unwrap());
 static AS_SEP_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?i)\s+AS\s+").unwrap());
+
+// Cheap predicate: matches the JOIN keyword anywhere in a string.
+// Dialect parsers should NOT run this against full SQL — JOINs inside
+// subqueries would false-positive. Use [`has_outer_join`] instead.
+static JOIN_DETECT_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?i)\bJOIN\b").unwrap());
+
+/// Returns true if the query's *outer* FROM clause contains a JOIN.
+/// Run this instead of matching `\bJOIN\b` against the full SQL —
+/// matching against the full SQL false-positives on JOINs inside subqueries.
+pub fn has_outer_join(sql: &str) -> bool {
+    let Some(caps) = FROM_CLAUSE_RE.captures(sql) else {
+        return false;
+    };
+    let from_body = caps.get(1).unwrap().as_str();
+    JOIN_DETECT_RE.is_match(from_body)
+}
 
 /// Walk a query's FROM clause and return the alias → table mapping.
 /// Returns an empty map (no join detected) when the query has no FROM clause.
@@ -393,6 +415,42 @@ mod tests {
         let map = parse_join_clauses(sql, &tables, "q.sql").unwrap();
         assert!(map.lookup("u").is_some());
         assert!(map.lookup("o").is_some());
+    }
+
+    #[test]
+    fn unsupported_join_rejects_natural_inner_join() {
+        let tables = vec![table("users", &["id"]), table("orgs", &["id"])];
+        let sql = "SELECT u.id FROM users u NATURAL INNER JOIN orgs o";
+        let err = parse_join_clauses(sql, &tables, "q.sql").unwrap_err();
+        assert!(err.to_string().contains("v1.1 supports INNER JOIN only"));
+    }
+
+    #[test]
+    fn unsupported_join_rejects_left_outer_join() {
+        let tables = vec![table("users", &["id"]), table("orgs", &["id"])];
+        let sql = "SELECT u.id FROM users u LEFT OUTER JOIN orgs o ON u.id = o.id";
+        let err = parse_join_clauses(sql, &tables, "q.sql").unwrap_err();
+        assert!(err.to_string().contains("v1.1 supports INNER JOIN only"));
+    }
+
+    #[test]
+    fn has_outer_join_true_when_from_contains_join() {
+        assert!(has_outer_join(
+            "SELECT u.id FROM users u INNER JOIN orgs o ON u.org_id = o.id"
+        ));
+    }
+
+    #[test]
+    fn has_outer_join_false_when_no_from() {
+        assert!(!has_outer_join("INSERT INTO users VALUES (1, 'foo')"));
+    }
+
+    #[test]
+    fn has_outer_join_false_when_join_only_in_subquery() {
+        // The outer FROM has only `users`. The JOIN lives inside a
+        // subquery. has_outer_join must NOT be fooled.
+        let sql = "SELECT id FROM users WHERE id IN (SELECT user_id FROM orgs INNER JOIN something ON orgs.id = something.org_id)";
+        assert!(!has_outer_join(sql));
     }
 
     #[test]

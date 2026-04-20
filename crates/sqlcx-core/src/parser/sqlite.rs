@@ -8,8 +8,8 @@ use crate::error::Result;
 use crate::ir::{ColumnDef, EnumDef, QueryDef, SqlType, SqlTypeCategory, TableDef};
 use crate::parser::joins::{has_outer_join, resolve_multi_table_columns};
 use crate::parser::{
-    build_params, ensure_supported_select_expr, make_unknown_column, split_column_defs,
-    split_query_blocks, DatabaseParser,
+    DatabaseParser, build_params, ensure_supported_select_expr, make_unknown_column,
+    split_column_defs, split_query_blocks,
 };
 
 // ── Static regex patterns ────────────────────────────────────────────────────
@@ -637,9 +637,10 @@ mod tests {
         let err = parser
             .parse_queries(sql, &tables, &enums, "q.sql")
             .unwrap_err();
-        assert!(err
-            .to_string()
-            .contains("SELECT * across multi-table JOINs"));
+        assert!(
+            err.to_string()
+                .contains("SELECT * across multi-table JOINs")
+        );
     }
 
     #[test]

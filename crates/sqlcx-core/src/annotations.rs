@@ -314,10 +314,10 @@ pub fn extract_annotations(sql: &str) -> (String, Annotations) {
         // Enum annotation: -- @enum("a", "b")
         if let Some(cap) = e_re.captures(trimmed) {
             let values = parse_enum_values(&cap[1]);
-            if !values.is_empty() {
-                if let Some(col) = find_next_column_name(&lines, i + 1) {
-                    annotations.enums.insert(col.to_lowercase(), values);
-                }
+            if !values.is_empty()
+                && let Some(col) = find_next_column_name(&lines, i + 1)
+            {
+                annotations.enums.insert(col.to_lowercase(), values);
             }
             i += 1;
             continue;
@@ -325,10 +325,10 @@ pub fn extract_annotations(sql: &str) -> (String, Annotations) {
 
         // JSON annotation: -- @json({ ... })
         if let Some(cap) = j_re.captures(trimmed) {
-            if let Some(shape) = parse_json_shape(&cap[1]) {
-                if let Some(col) = find_next_column_name(&lines, i + 1) {
-                    annotations.json_shapes.insert(col.to_lowercase(), shape);
-                }
+            if let Some(shape) = parse_json_shape(&cap[1])
+                && let Some(col) = find_next_column_name(&lines, i + 1)
+            {
+                annotations.json_shapes.insert(col.to_lowercase(), shape);
             }
             i += 1;
             continue;

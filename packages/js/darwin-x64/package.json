@@ -1,9 +1,15 @@
 {
   "name": "@sqlcx/darwin-x64",
-  "version": "1.0.0",
+  "version": "0.1.3",
   "description": "sqlcx binary for macOS Intel",
-  "os": ["darwin"],
-  "cpu": ["x64"],
-  "bin": { "sqlcx": "bin/sqlcx" },
+  "os": [
+    "darwin"
+  ],
+  "cpu": [
+    "x64"
+  ],
+  "bin": {
+    "sqlcx": "bin/sqlcx"
+  },
   "license": "MIT"
 }

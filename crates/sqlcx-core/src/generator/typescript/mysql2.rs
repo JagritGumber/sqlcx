@@ -5,7 +5,7 @@ use std::path::Path;
 
 use crate::error::Result;
 use crate::generator::typescript::common::{
-    generate_params_type, generate_row_type, json_stringify, TsTypeMap,
+    TsTypeMap, generate_params_type, generate_row_type, json_stringify,
 };
 use crate::generator::{DriverGenerator, GeneratedFile};
 use crate::ir::{QueryCommand, QueryDef, SqlcxIR};
@@ -204,8 +204,8 @@ impl DriverGenerator for Mysql2Generator {
 mod tests {
     use super::*;
     use crate::ir::*;
-    use crate::parser::postgres::PostgresParser;
     use crate::parser::DatabaseParser;
+    use crate::parser::postgres::PostgresParser;
 
     fn parse_fixture_ir() -> SqlcxIR {
         let schema_sql = include_str!("../../../../../tests/fixtures/schema.sql");
@@ -224,8 +224,8 @@ mod tests {
 
     #[test]
     fn generates_client_file() {
-        let gen = Mysql2Generator;
-        let content = gen.generate_client();
+        let gen_ = Mysql2Generator;
+        let content = gen_.generate_client();
         assert!(content.contains("mysql2/promise"));
         assert!(content.contains("export class Mysql2Client"));
         insta::assert_snapshot!("mysql2_client", content);
@@ -234,8 +234,8 @@ mod tests {
     #[test]
     fn generates_query_functions() {
         let ir = parse_fixture_ir();
-        let gen = Mysql2Generator;
-        let content = gen.generate_query_functions(&ir.queries);
+        let gen_ = Mysql2Generator;
+        let content = gen_.generate_query_functions(&ir.queries);
         assert!(content.contains("export async function getUser"));
         insta::assert_snapshot!("mysql2_queries", content);
     }

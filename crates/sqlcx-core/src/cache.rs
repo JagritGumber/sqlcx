@@ -154,8 +154,10 @@ mod tests {
     #[test]
     fn cache_miss_on_no_file() {
         let dir = tempfile::tempdir().unwrap();
-        assert!(read_cache(&dir.path().join(".sqlcx"), "any")
-            .unwrap()
-            .is_none());
+        assert!(
+            read_cache(&dir.path().join(".sqlcx"), "any")
+                .unwrap()
+                .is_none()
+        );
     }
 }

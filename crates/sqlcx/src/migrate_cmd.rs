@@ -2,8 +2,8 @@ use clap::Subcommand;
 use sqlcx_core::config::{MigrateConfig, SqlcxConfig};
 use sqlcx_core::error::{Result, SqlcxError};
 use sqlcx_core::migrate::{
-    compute_status, create_new_migration, discover_migrations, run_pending, MigrationDriver,
-    MigrationStatus, PostgresDriver,
+    MigrationDriver, MigrationStatus, PostgresDriver, compute_status, create_new_migration,
+    discover_migrations, run_pending,
 };
 use std::path::{Path, PathBuf};
 
@@ -84,9 +84,5 @@ fn resolve_database_url(mig: &MigrateConfig) -> Result<String> {
 
 fn resolve_path(base: &Path, s: &str) -> PathBuf {
     let p = PathBuf::from(s);
-    if p.is_absolute() {
-        p
-    } else {
-        base.join(p)
-    }
+    if p.is_absolute() { p } else { base.join(p) }
 }

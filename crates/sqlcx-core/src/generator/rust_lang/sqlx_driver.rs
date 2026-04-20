@@ -199,8 +199,8 @@ impl DriverGenerator for SqlxGenerator {
 mod tests {
     use super::*;
     use crate::ir::*;
-    use crate::parser::postgres::PostgresParser;
     use crate::parser::DatabaseParser;
+    use crate::parser::postgres::PostgresParser;
 
     fn parse_fixture_ir() -> SqlcxIR {
         let schema_sql = include_str!("../../../../../tests/fixtures/schema.sql");
@@ -219,8 +219,8 @@ mod tests {
 
     #[test]
     fn generates_client_file() {
-        let gen = SqlxGenerator;
-        let content = gen.generate_client();
+        let gen_ = SqlxGenerator;
+        let content = gen_.generate_client();
         assert!(content.contains("sqlx"));
         assert!(content.contains("DO NOT EDIT"));
         insta::assert_snapshot!("sqlx_client", content);
@@ -229,8 +229,8 @@ mod tests {
     #[test]
     fn generates_query_functions() {
         let ir = parse_fixture_ir();
-        let gen = SqlxGenerator;
-        let content = gen.generate_query_functions(&ir.queries);
+        let gen_ = SqlxGenerator;
+        let content = gen_.generate_query_functions(&ir.queries);
         assert!(content.contains("pub async fn get_user"));
         assert!(content.contains("pub struct GetUserRow"));
         assert!(content.contains("GET_USER_SQL"));

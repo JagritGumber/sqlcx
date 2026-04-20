@@ -6,7 +6,7 @@
 
 use crate::error::Result;
 use crate::generator::typescript::common::{
-    generate_driver_files, generate_query_functions_file, TsTypeMap,
+    TsTypeMap, generate_driver_files, generate_query_functions_file,
 };
 use crate::generator::{DriverGenerator, GeneratedFile};
 use crate::ir::{QueryDef, SqlcxIR};
@@ -72,8 +72,8 @@ impl DriverGenerator for BunSqlGenerator {
 mod tests {
     use super::*;
     use crate::ir::*;
-    use crate::parser::postgres::PostgresParser;
     use crate::parser::DatabaseParser;
+    use crate::parser::postgres::PostgresParser;
 
     fn parse_fixture_ir() -> SqlcxIR {
         let schema_sql = include_str!("../../../../../tests/fixtures/schema.sql");
@@ -92,8 +92,8 @@ mod tests {
 
     #[test]
     fn generates_client_file() {
-        let gen = BunSqlGenerator;
-        let content = gen.generate_client();
+        let gen_ = BunSqlGenerator;
+        let content = gen_.generate_client();
         assert!(content.contains("export interface DatabaseClient"));
         assert!(content.contains("export class BunSqlClient implements DatabaseClient"));
         insta::assert_snapshot!("bun_sql_client", content);
@@ -102,8 +102,8 @@ mod tests {
     #[test]
     fn generates_query_functions() {
         let ir = parse_fixture_ir();
-        let gen = BunSqlGenerator;
-        let content = gen.generate_query_functions(&ir.queries);
+        let gen_ = BunSqlGenerator;
+        let content = gen_.generate_query_functions(&ir.queries);
         assert!(content.contains("export async function getUser"));
         assert!(content.contains("export interface GetUserRow"));
         assert!(content.contains("getUserSql"));

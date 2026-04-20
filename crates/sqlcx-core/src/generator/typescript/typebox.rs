@@ -212,8 +212,8 @@ impl SchemaGenerator for TypeBoxGenerator {
 mod tests {
     use super::*;
     use crate::ir::*;
-    use crate::parser::postgres::PostgresParser;
     use crate::parser::DatabaseParser;
+    use crate::parser::postgres::PostgresParser;
     use std::collections::HashMap;
 
     fn parse_fixture_ir() -> SqlcxIR {
@@ -230,14 +230,16 @@ mod tests {
     #[test]
     fn generates_schema_file() {
         let ir = parse_fixture_ir();
-        let gen = TypeBoxGenerator;
-        let content = gen.generate_schema_file(&ir, &HashMap::new());
+        let gen_ = TypeBoxGenerator;
+        let content = gen_.generate_schema_file(&ir, &HashMap::new());
         // Verify key patterns exist
         assert!(content.contains("import { Type, type Static }"));
         assert!(content.contains("export const UserStatus = Type.Union("));
         assert!(content.contains("export const SelectUsers = Type.Object("));
         assert!(content.contains("export const InsertUsers = Type.Object("));
-        assert!(content.contains("export type SelectUsers = Prettify<Static<typeof SelectUsers>>;"));
+        assert!(
+            content.contains("export type SelectUsers = Prettify<Static<typeof SelectUsers>>;")
+        );
         // Snapshot for exact comparison
         insta::assert_snapshot!("typebox_schema", content);
     }

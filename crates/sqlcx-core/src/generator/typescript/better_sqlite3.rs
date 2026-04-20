@@ -5,7 +5,7 @@ use std::path::Path;
 
 use crate::error::Result;
 use crate::generator::typescript::common::{
-    generate_params_type, generate_row_type, json_stringify, TsTypeMap,
+    TsTypeMap, generate_params_type, generate_row_type, json_stringify,
 };
 use crate::generator::{DriverGenerator, GeneratedFile};
 use crate::ir::{QueryCommand, QueryDef, SqlcxIR};
@@ -98,7 +98,9 @@ fn generate_query_function(query: &QueryDef) -> String {
             let type_name = format!("{}Row", pascal_case(&query.name));
             (
                 format!("{type_name} | undefined"),
-                format!("  return db.prepare({fn_name}Sql).get({spread_args}) as {type_name} | undefined;"),
+                format!(
+                    "  return db.prepare({fn_name}Sql).get({spread_args}) as {type_name} | undefined;"
+                ),
             )
         }
         QueryCommand::Many => {
@@ -114,7 +116,9 @@ fn generate_query_function(query: &QueryDef) -> String {
         ),
         QueryCommand::ExecResult => (
             "{ changes: number }".to_string(),
-            format!("  const result = db.prepare({fn_name}Sql).run({spread_args});\n  return {{ changes: result.changes }};"),
+            format!(
+                "  const result = db.prepare({fn_name}Sql).run({spread_args});\n  return {{ changes: result.changes }};"
+            ),
         ),
     };
 
@@ -188,8 +192,8 @@ impl DriverGenerator for BetterSqlite3Generator {
 mod tests {
     use super::*;
     use crate::ir::*;
-    use crate::parser::postgres::PostgresParser;
     use crate::parser::DatabaseParser;
+    use crate::parser::postgres::PostgresParser;
 
     fn parse_fixture_ir() -> SqlcxIR {
         let schema_sql = include_str!("../../../../../tests/fixtures/schema.sql");
@@ -208,8 +212,8 @@ mod tests {
 
     #[test]
     fn generates_client_file() {
-        let gen = BetterSqlite3Generator;
-        let content = gen.generate_client();
+        let gen_ = BetterSqlite3Generator;
+        let content = gen_.generate_client();
         assert!(content.contains("better-sqlite3"));
         insta::assert_snapshot!("better_sqlite3_client", content);
     }
@@ -217,8 +221,8 @@ mod tests {
     #[test]
     fn generates_query_functions() {
         let ir = parse_fixture_ir();
-        let gen = BetterSqlite3Generator;
-        let content = gen.generate_query_functions(&ir.queries);
+        let gen_ = BetterSqlite3Generator;
+        let content = gen_.generate_query_functions(&ir.queries);
         // Synchronous — no async
         assert!(content.contains("export function getUser"));
         assert!(!content.contains("async"));

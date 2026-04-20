@@ -207,8 +207,8 @@ impl SchemaGenerator for ZodGenerator {
 mod tests {
     use super::*;
     use crate::ir::*;
-    use crate::parser::postgres::PostgresParser;
     use crate::parser::DatabaseParser;
+    use crate::parser::postgres::PostgresParser;
     use std::collections::HashMap;
 
     fn parse_fixture_ir() -> SqlcxIR {
@@ -225,8 +225,8 @@ mod tests {
     #[test]
     fn generates_zod_v4_schema() {
         let ir = parse_fixture_ir();
-        let gen = ZodGenerator;
-        let file = gen.generate(&ir, &HashMap::new()).unwrap();
+        let gen_ = ZodGenerator;
+        let file = gen_.generate(&ir, &HashMap::new()).unwrap();
         assert!(file.content.contains("import { z } from \"zod\""));
         assert!(file.content.contains("z.enum(["));
         assert!(file.content.contains("z.object({"));

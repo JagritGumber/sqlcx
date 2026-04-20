@@ -61,8 +61,8 @@ impl LanguagePlugin for PythonPlugin {
 mod tests {
     use super::*;
     use crate::generator::LanguagePlugin;
-    use crate::parser::postgres::PostgresParser;
     use crate::parser::DatabaseParser;
+    use crate::parser::postgres::PostgresParser;
     use std::collections::HashMap;
 
     fn parse_fixture_ir() -> SqlcxIR {

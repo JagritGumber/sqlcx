@@ -10,10 +10,10 @@ pub fn resolve_param_names(params: &[RawParam]) -> Vec<String> {
     // Pass 1: count column frequency for params without an override
     let mut freq: HashMap<&str, u32> = HashMap::new();
     for p in params {
-        if p.r#override.is_none() {
-            if let Some(col) = &p.column {
-                *freq.entry(col.as_str()).or_insert(0) += 1;
-            }
+        if p.r#override.is_none()
+            && let Some(col) = &p.column
+        {
+            *freq.entry(col.as_str()).or_insert(0) += 1;
         }
     }
 

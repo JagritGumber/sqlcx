@@ -1,6 +1,6 @@
 use sqlcx_core::{
-    config::TargetConfig, generator::resolve_language, ir::SqlcxIR,
-    parser::postgres::PostgresParser, parser::DatabaseParser,
+    config::TargetConfig, generator::resolve_language, ir::SqlcxIR, parser::DatabaseParser,
+    parser::postgres::PostgresParser,
 };
 use std::collections::HashMap;
 use std::fs;

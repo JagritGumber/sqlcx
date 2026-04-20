@@ -248,8 +248,8 @@ impl DriverGenerator for DatabaseSqlGenerator {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::parser::postgres::PostgresParser;
     use crate::parser::DatabaseParser;
+    use crate::parser::postgres::PostgresParser;
 
     fn parse_fixture_ir() -> SqlcxIR {
         let schema_sql = include_str!("../../../../../tests/fixtures/schema.sql");
@@ -268,8 +268,8 @@ mod tests {
 
     #[test]
     fn generates_client_file() {
-        let gen = DatabaseSqlGenerator;
-        let content = gen.generate_client();
+        let gen_ = DatabaseSqlGenerator;
+        let content = gen_.generate_client();
         assert!(content.contains("type DBTX interface"));
         assert!(content.contains("type Queries struct"));
         assert!(content.contains("func New(db DBTX) *Queries"));
@@ -279,8 +279,8 @@ mod tests {
     #[test]
     fn generates_query_file() {
         let ir = parse_fixture_ir();
-        let gen = DatabaseSqlGenerator;
-        let content = gen.generate_query_file(&ir.queries);
+        let gen_ = DatabaseSqlGenerator;
+        let content = gen_.generate_query_file(&ir.queries);
         assert!(content.contains("func (q *Queries) GetUser"));
         assert!(content.contains("func (q *Queries) ListUsers"));
         assert!(content.contains("func (q *Queries) CreateUser"));

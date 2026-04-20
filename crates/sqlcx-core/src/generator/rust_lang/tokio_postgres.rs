@@ -89,7 +89,10 @@ fn generate_query_function(query: &QueryDef) -> String {
         QueryCommand::One => {
             let type_name = format!("{}Row", pascal_case(&query.name));
             (
-                format!("std::result::Result<Option<{}>, tokio_postgres::Error>", type_name),
+                format!(
+                    "std::result::Result<Option<{}>, tokio_postgres::Error>",
+                    type_name
+                ),
                 format!(
                     "    let row = client.query_opt({}, {}).await?;\n    Ok(row.map(|r| {}::from_row(&r)))",
                     sql_const_name, params_array, type_name
@@ -99,7 +102,10 @@ fn generate_query_function(query: &QueryDef) -> String {
         QueryCommand::Many => {
             let type_name = format!("{}Row", pascal_case(&query.name));
             (
-                format!("std::result::Result<Vec<{}>, tokio_postgres::Error>", type_name),
+                format!(
+                    "std::result::Result<Vec<{}>, tokio_postgres::Error>",
+                    type_name
+                ),
                 format!(
                     "    let rows = client.query({}, {}).await?;\n    Ok(rows.iter().map(|r| {}::from_row(r)).collect())",
                     sql_const_name, params_array, type_name
@@ -185,8 +191,8 @@ impl DriverGenerator for TokioPostgresGenerator {
 mod tests {
     use super::*;
     use crate::ir::*;
-    use crate::parser::postgres::PostgresParser;
     use crate::parser::DatabaseParser;
+    use crate::parser::postgres::PostgresParser;
 
     fn parse_fixture_ir() -> SqlcxIR {
         let schema_sql = include_str!("../../../../../tests/fixtures/schema.sql");
@@ -205,8 +211,8 @@ mod tests {
 
     #[test]
     fn generates_client_file() {
-        let gen = TokioPostgresGenerator;
-        let content = gen.generate_client();
+        let gen_ = TokioPostgresGenerator;
+        let content = gen_.generate_client();
         assert!(content.contains("tokio-postgres"));
         assert!(content.contains("DO NOT EDIT"));
         insta::assert_snapshot!("tokio_postgres_client", content);
@@ -215,8 +221,8 @@ mod tests {
     #[test]
     fn generates_query_functions() {
         let ir = parse_fixture_ir();
-        let gen = TokioPostgresGenerator;
-        let content = gen.generate_query_functions(&ir.queries);
+        let gen_ = TokioPostgresGenerator;
+        let content = gen_.generate_query_functions(&ir.queries);
         assert!(content.contains("pub async fn get_user"));
         assert!(content.contains("pub struct GetUserRow"));
         assert!(content.contains("query_opt"));

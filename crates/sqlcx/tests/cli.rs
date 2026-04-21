@@ -46,7 +46,7 @@ fn cli_init_scaffolds_project() {
         String::from_utf8_lossy(&output.stderr)
     );
     assert!(dir.path().join("src/db/schema.ts").exists());
-    assert!(dir.path().join("src/db/client.ts").exists());
+    assert!(dir.path().join("src/db/users.queries.ts").exists());
 }
 
 #[test]
@@ -113,14 +113,13 @@ fn cli_generate_with_fixtures() {
         String::from_utf8_lossy(&output.stderr)
     );
     assert!(out_dir.join("schema.ts").exists());
-    assert!(out_dir.join("client.ts").exists());
-    // Query file should exist (users.queries.ts)
     let query_files: Vec<_> = std::fs::read_dir(&out_dir)
         .unwrap()
         .filter_map(|e| e.ok())
         .filter(|e| e.file_name().to_string_lossy().ends_with(".queries.ts"))
         .collect();
     assert!(!query_files.is_empty());
+    assert!(!out_dir.join("client.ts").exists());
 }
 
 #[test]
@@ -254,8 +253,8 @@ fn cli_generate_with_relative_out_path() {
         "schema.ts not found at src/db/"
     );
     assert!(
-        dir.path().join("src/db/client.ts").exists(),
-        "client.ts not found at src/db/"
+        dir.path().join("src/db/users.queries.ts").exists(),
+        "users.queries.ts not found at src/db/"
     );
     // Should NOT be double-nested
     assert!(
@@ -402,8 +401,8 @@ fn cli_generate_keeps_files_from_multiple_targets_in_same_out_dir() {
         String::from_utf8_lossy(&output.stderr)
     );
     assert!(dir.path().join("shared/schema.ts").exists());
-    assert!(dir.path().join("shared/client.ts").exists());
     assert!(dir.path().join("shared/users.queries.ts").exists());
+    assert!(!dir.path().join("shared/client.ts").exists());
     assert!(dir.path().join("shared/models.py").exists());
     assert!(dir.path().join("shared/client.py").exists());
     assert!(dir.path().join("shared/users_queries.py").exists());

@@ -1,77 +1,67 @@
-// Bun.sql driver generator.
-//
-// Thin adapter over `common::generate_driver_files`. bun-sql uses the
-// default TS type mapping and the async DatabaseClient body shape, so
-// the only driver-specific piece is the client.ts content.
+// bun-sql driver. Emits queries.ts only — no client wrapper. Functions take
+// `sql: SQL` directly (Bun's native SQL instance) and call `sql.unsafe(...)`.
 
 use crate::error::Result;
 use crate::generator::typescript::common::{
-    TsTypeMap, generate_driver_files, generate_query_functions_file,
+    BodyCtx, TsDriverShape, TsTypeMap, generate_driver_files,
 };
 use crate::generator::{DriverGenerator, GeneratedFile};
-use crate::ir::{QueryDef, SqlcxIR};
+use crate::ir::{QueryCommand, SqlcxIR};
 
 pub struct BunSqlGenerator;
 
-struct BunSqlTypeMap;
-impl TsTypeMap for BunSqlTypeMap {}
+impl TsTypeMap for BunSqlGenerator {}
 
-impl BunSqlGenerator {
-    /// Generate the client.ts file content (DatabaseClient interface + BunSqlClient adapter).
-    pub fn generate_client(&self) -> String {
-        r#"export interface DatabaseClient {
-  query<T>(sql: string, params: unknown[]): Promise<T[]>;
-  queryOne<T>(sql: string, params: unknown[]): Promise<T | null>;
-  execute(sql: string, params: unknown[]): Promise<{ rowsAffected: number }>;
-}
-
-interface BunSqlDriver {
-  unsafe(query: string, values?: unknown[]): Promise<any[] & { count: number }>;
-}
-
-export class BunSqlClient implements DatabaseClient {
-  private sql: BunSqlDriver;
-
-  constructor(sql: BunSqlDriver) {
-    this.sql = sql;
-  }
-
-  async query<T>(text: string, values?: unknown[]): Promise<T[]> {
-    const result = await this.sql.unsafe(text, values);
-    return [...result] as T[];
-  }
-
-  async queryOne<T>(text: string, values?: unknown[]): Promise<T | null> {
-    const rows = await this.query<T>(text, values);
-    return rows[0] ?? null;
-  }
-
-  async execute(text: string, values?: unknown[]): Promise<{ rowsAffected: number }> {
-    const result = await this.sql.unsafe(text, values);
-    return { rowsAffected: result.count };
-  }
-}"#
-        .to_string()
+impl TsDriverShape for BunSqlGenerator {
+    fn imports(&self) -> String {
+        "import type { SQL } from \"bun\";".to_string()
     }
-
-    /// Exposed for tests that snapshot the queries file directly.
-    pub fn generate_query_functions(&self, queries: &[QueryDef]) -> String {
-        generate_query_functions_file(&BunSqlTypeMap, queries)
+    fn connection_type(&self) -> &'static str {
+        "SQL"
+    }
+    fn connection_param(&self) -> &'static str {
+        "sql"
+    }
+    fn is_async(&self) -> bool {
+        true
+    }
+    fn render_body(&self, ctx: &BodyCtx<'_>) -> (String, String) {
+        let (sc, rt, va) = (ctx.sql_const, ctx.row_type, ctx.values_arg);
+        match ctx.command {
+            QueryCommand::One => (
+                format!("Promise<{rt} | null>"),
+                format!(
+                    "  const rows = (await sql.unsafe({sc}, {va})) as {rt}[];\n  return rows[0] ?? null;"
+                ),
+            ),
+            QueryCommand::Many => (
+                format!("Promise<{rt}[]>"),
+                format!("  return (await sql.unsafe({sc}, {va})) as {rt}[];"),
+            ),
+            QueryCommand::Exec => (
+                "Promise<void>".to_string(),
+                format!("  await sql.unsafe({sc}, {va});"),
+            ),
+            QueryCommand::ExecResult => (
+                "Promise<{ rowsAffected: number }>".to_string(),
+                format!(
+                    "  const result = await sql.unsafe({sc}, {va});\n  return {{ rowsAffected: result.count }};"
+                ),
+            ),
+        }
     }
 }
 
 impl DriverGenerator for BunSqlGenerator {
     fn generate(&self, ir: &SqlcxIR) -> Result<Vec<GeneratedFile>> {
-        generate_driver_files(&BunSqlTypeMap, self.generate_client(), ir)
+        generate_driver_files(self, ir)
     }
 }
-
-// ── Tests ─────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ir::*;
+    use crate::generator::typescript::common::generate_queries_file;
     use crate::parser::DatabaseParser;
     use crate::parser::postgres::PostgresParser;
 
@@ -91,22 +81,12 @@ mod tests {
     }
 
     #[test]
-    fn generates_client_file() {
-        let gen_ = BunSqlGenerator;
-        let content = gen_.generate_client();
-        assert!(content.contains("export interface DatabaseClient"));
-        assert!(content.contains("export class BunSqlClient implements DatabaseClient"));
-        insta::assert_snapshot!("bun_sql_client", content);
-    }
-
-    #[test]
-    fn generates_query_functions() {
+    fn generates_bun_sql_query_functions() {
         let ir = parse_fixture_ir();
-        let gen_ = BunSqlGenerator;
-        let content = gen_.generate_query_functions(&ir.queries);
+        let content = generate_queries_file(&BunSqlGenerator, &ir.queries);
+        assert!(content.contains("import type { SQL } from \"bun\""));
+        assert!(content.contains("sql.unsafe"));
         assert!(content.contains("export async function getUser"));
-        assert!(content.contains("export interface GetUserRow"));
-        assert!(content.contains("getUserSql"));
         insta::assert_snapshot!("bun_sql_queries", content);
     }
 }

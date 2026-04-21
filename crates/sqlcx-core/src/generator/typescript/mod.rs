@@ -93,7 +93,7 @@ mod tests {
     }
 
     #[test]
-    fn generates_three_files() {
+    fn generates_schema_and_queries_files() {
         let ir = parse_fixture_ir();
         let plugin = TypeScriptPlugin::new("typebox", "bun-sql").unwrap();
         let config = TargetConfig {
@@ -104,10 +104,9 @@ mod tests {
             overrides: HashMap::new(),
         };
         let files = plugin.generate(&ir, &config).unwrap();
-        assert_eq!(files.len(), 3);
-        // Paths are simple filenames — CLI handles output directory placement
+        assert_eq!(files.len(), 2);
         assert!(files.iter().any(|f| f.path == "schema.ts"));
-        assert!(files.iter().any(|f| f.path == "client.ts"));
         assert!(files.iter().any(|f| f.path == "users.queries.ts"));
+        assert!(!files.iter().any(|f| f.path == "client.ts"));
     }
 }

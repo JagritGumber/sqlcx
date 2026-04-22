@@ -9,6 +9,6 @@
     "better-sqlite3": "^11",
     "@types/better-sqlite3": "^7",
     "@types/bun": "^1",
-    "typescript": "^5"
+    "typescript": "^6"
   }
 }

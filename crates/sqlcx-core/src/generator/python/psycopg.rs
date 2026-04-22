@@ -1,40 +1,33 @@
-// psycopg (psycopg3) driver generator for Python
-
-use std::collections::BTreeMap;
-use std::path::Path;
+// psycopg (psycopg3) driver. Emits queries.py only. Named %(name)s
+// placeholders + dict params arg. Sync functions against psycopg.Connection.
 
 use crate::error::Result;
 use crate::generator::python::common::{
-    DefaultPyTypeMap, escape_sql, generate_params_class, generate_row_class,
+    PyBodyCtx, PyDriverShape, PyTypeMap, generate_driver_files,
 };
 use crate::generator::{DriverGenerator, GeneratedFile};
 use crate::ir::{ParamDef, QueryCommand, QueryDef, SqlcxIR};
-use crate::utils::{pascal_case, snake_case};
 
 pub struct PsycopgGenerator;
 
-/// Convert $1, $2, ... placeholders to %(param_name)s for psycopg3.
-/// Uses named params to correctly handle reused ($1 OR $1) and out-of-order ($2 AND $1) params.
-fn to_psycopg_params(sql: &str, params: &[ParamDef]) -> String {
+impl PyTypeMap for PsycopgGenerator {}
+
+fn rewrite_named(sql: &str, params: &[ParamDef]) -> String {
     let mut result = String::with_capacity(sql.len());
     let mut chars = sql.chars().peekable();
     while let Some(c) = chars.next() {
-        if c == '$' {
-            if chars.peek().is_some_and(|ch| ch.is_ascii_digit()) {
-                let mut num_str = String::new();
-                while chars.peek().is_some_and(|ch| ch.is_ascii_digit()) {
-                    num_str.push(chars.next().unwrap());
-                }
-                let idx: u32 = num_str.parse().unwrap_or(0);
-                let name = params
-                    .iter()
-                    .find(|p| p.index == idx)
-                    .map(|p| p.name.as_str())
-                    .unwrap_or("unknown");
-                result.push_str(&format!("%({})s", name));
-            } else {
-                result.push(c);
+        if c == '$' && chars.peek().is_some_and(|ch| ch.is_ascii_digit()) {
+            let mut num_str = String::new();
+            while chars.peek().is_some_and(|ch| ch.is_ascii_digit()) {
+                num_str.push(chars.next().unwrap());
             }
+            let idx: u32 = num_str.parse().unwrap_or(0);
+            let name = params
+                .iter()
+                .find(|p| p.index == idx)
+                .map(|p| p.name.as_str())
+                .unwrap_or("unknown");
+            result.push_str(&format!("%({name})s"));
         } else {
             result.push(c);
         }
@@ -42,151 +35,64 @@ fn to_psycopg_params(sql: &str, params: &[ParamDef]) -> String {
     result
 }
 
-fn generate_query_function(query: &QueryDef) -> String {
-    let fn_name = snake_case(&query.name);
-    let row_class = generate_row_class(&DefaultPyTypeMap, query);
-    let params_class = generate_params_class(&DefaultPyTypeMap, query);
-    let has_params = !query.params.is_empty();
-    let params_type_name = format!("{}Params", pascal_case(&query.name));
-    let rewritten_sql = to_psycopg_params(&query.sql, &query.params);
-    let sql_const = format!(
-        "{}_SQL = \"{}\"",
-        fn_name.to_uppercase(),
-        escape_sql(&rewritten_sql)
-    );
-
-    let params_sig = if has_params {
-        format!(", params: {}", params_type_name)
-    } else {
-        String::new()
-    };
-
-    let params_arg = if has_params {
-        let args: Vec<String> = query
+impl PyDriverShape for PsycopgGenerator {
+    fn driver_import(&self) -> &'static str {
+        "from psycopg import Connection"
+    }
+    fn connection_type(&self) -> &'static str {
+        "Connection"
+    }
+    fn is_async(&self) -> bool {
+        false
+    }
+    fn rewrite_sql(&self, query: &QueryDef) -> String {
+        rewrite_named(&query.sql, &query.params)
+    }
+    fn build_params_arg(&self, query: &QueryDef) -> String {
+        if query.params.is_empty() {
+            return "{}".to_string();
+        }
+        let entries: Vec<String> = query
             .params
             .iter()
             .map(|p| format!("\"{}\": params.{}", p.name, p.name))
             .collect();
-        format!("{{{}}}", args.join(", "))
-    } else {
-        "{}".to_string()
-    };
-
-    let (return_type, body) = match query.command {
-        QueryCommand::One => {
-            let type_name = format!("{}Row", pascal_case(&query.name));
-            (
-                format!("{} | None", type_name),
+        format!("{{{}}}", entries.join(", "))
+    }
+    fn render_body(&self, ctx: &PyBodyCtx<'_>) -> (String, String) {
+        let (sc, rt, pa) = (ctx.sql_const, ctx.row_type, ctx.params_arg);
+        match ctx.command {
+            QueryCommand::One => (
+                format!("{rt} | None"),
                 format!(
-                    "    cur = conn.execute({}_SQL, {})\n    row = cur.fetchone()\n    if row is None:\n        return None\n    return {}(*row)",
-                    fn_name.to_uppercase(),
-                    params_arg,
-                    type_name
+                    "    cur = conn.execute({sc}, {pa})\n    row = cur.fetchone()\n    if row is None:\n        return None\n    return {rt}(*row)"
                 ),
-            )
-        }
-        QueryCommand::Many => {
-            let type_name = format!("{}Row", pascal_case(&query.name));
-            (
-                format!("list[{}]", type_name),
+            ),
+            QueryCommand::Many => (
+                format!("list[{rt}]"),
                 format!(
-                    "    cur = conn.execute({}_SQL, {})\n    return [{}(*row) for row in cur.fetchall()]",
-                    fn_name.to_uppercase(),
-                    params_arg,
-                    type_name
+                    "    cur = conn.execute({sc}, {pa})\n    return [{rt}(*row) for row in cur.fetchall()]"
                 ),
-            )
-        }
-        QueryCommand::Exec => (
-            "None".to_string(),
-            format!(
-                "    conn.execute({}_SQL, {})",
-                fn_name.to_uppercase(),
-                params_arg
             ),
-        ),
-        QueryCommand::ExecResult => (
-            "int".to_string(),
-            format!(
-                "    cur = conn.execute({}_SQL, {})\n    return cur.rowcount",
-                fn_name.to_uppercase(),
-                params_arg
+            QueryCommand::Exec => ("None".to_string(), format!("    conn.execute({sc}, {pa})")),
+            QueryCommand::ExecResult => (
+                "int".to_string(),
+                format!("    cur = conn.execute({sc}, {pa})\n    return cur.rowcount"),
             ),
-        ),
-    };
-
-    let mut parts: Vec<String> = Vec::new();
-    if !row_class.is_empty() {
-        parts.push(row_class);
-    }
-    if !params_class.is_empty() {
-        parts.push(params_class);
-    }
-    parts.push(sql_const);
-    parts.push(format!(
-        "def {}(conn: Connection{}) -> {}:\n{}",
-        fn_name, params_sig, return_type, body
-    ));
-
-    parts.join("\n\n")
-}
-
-impl PsycopgGenerator {
-    pub fn generate_client(&self) -> String {
-        r#"# Code generated by sqlcx. DO NOT EDIT.
-from __future__ import annotations
-
-from psycopg import Connection
-"#
-        .to_string()
-    }
-
-    pub fn generate_query_functions(&self, queries: &[QueryDef]) -> String {
-        let header = "# Code generated by sqlcx. DO NOT EDIT.\nfrom __future__ import annotations\n\nfrom dataclasses import dataclass\nfrom typing import Any\nfrom datetime import datetime\nfrom psycopg import Connection";
-        let functions: Vec<String> = queries.iter().map(generate_query_function).collect();
-        if functions.is_empty() {
-            return format!("{header}\n");
         }
-        format!("{header}\n\n\n{}", functions.join("\n\n\n"))
     }
 }
 
 impl DriverGenerator for PsycopgGenerator {
     fn generate(&self, ir: &SqlcxIR) -> Result<Vec<GeneratedFile>> {
-        let mut files = Vec::new();
-
-        files.push(GeneratedFile {
-            path: "client.py".to_string(),
-            content: self.generate_client(),
-        });
-
-        let mut grouped: BTreeMap<String, Vec<&QueryDef>> = BTreeMap::new();
-        for query in &ir.queries {
-            grouped
-                .entry(query.source_file.clone())
-                .or_default()
-                .push(query);
-        }
-        for (source_file, queries) in &grouped {
-            let basename = Path::new(source_file)
-                .file_stem()
-                .unwrap_or_default()
-                .to_string_lossy();
-            let owned: Vec<QueryDef> = queries.iter().map(|q| (*q).clone()).collect();
-            files.push(GeneratedFile {
-                path: format!("{}_queries.py", basename),
-                content: self.generate_query_functions(&owned),
-            });
-        }
-
-        Ok(files)
+        generate_driver_files(self, ir)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ir::*;
+    use crate::generator::python::common::generate_queries_file;
     use crate::parser::DatabaseParser;
     use crate::parser::postgres::PostgresParser;
 
@@ -206,22 +112,12 @@ mod tests {
     }
 
     #[test]
-    fn generates_client_file() {
-        let gen_ = PsycopgGenerator;
-        let content = gen_.generate_client();
-        assert!(content.contains("psycopg"));
-        assert!(content.contains("DO NOT EDIT"));
-        insta::assert_snapshot!("psycopg_client", content);
-    }
-
-    #[test]
-    fn generates_query_functions() {
+    fn generates_psycopg_query_functions() {
         let ir = parse_fixture_ir();
-        let gen_ = PsycopgGenerator;
-        let content = gen_.generate_query_functions(&ir.queries);
+        let content = generate_queries_file(&PsycopgGenerator, &ir.queries);
+        assert!(content.contains("from psycopg import Connection"));
         assert!(content.contains("def get_user"));
-        assert!(content.contains("class GetUserRow"));
-        assert!(content.contains("GET_USER_SQL"));
+        assert!(content.contains("%(id)s"));
         insta::assert_snapshot!("psycopg_queries", content);
     }
 }

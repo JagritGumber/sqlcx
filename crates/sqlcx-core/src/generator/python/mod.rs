@@ -101,7 +101,7 @@ mod tests {
     }
 
     #[test]
-    fn generates_three_files_with_psycopg() {
+    fn generates_models_and_queries_with_psycopg() {
         let ir = parse_fixture_ir();
         let plugin = PythonPlugin::new("pydantic", "psycopg").unwrap();
         let config = TargetConfig {
@@ -112,14 +112,14 @@ mod tests {
             overrides: HashMap::new(),
         };
         let files = plugin.generate(&ir, &config).unwrap();
-        assert_eq!(files.len(), 3);
+        assert_eq!(files.len(), 2);
         assert!(files.iter().any(|f| f.path == "models.py"));
-        assert!(files.iter().any(|f| f.path == "client.py"));
         assert!(files.iter().any(|f| f.path.ends_with("_queries.py")));
+        assert!(!files.iter().any(|f| f.path == "client.py"));
     }
 
     #[test]
-    fn generates_three_files_with_asyncpg() {
+    fn generates_models_and_queries_with_asyncpg() {
         let ir = parse_fixture_ir();
         let plugin = PythonPlugin::new("pydantic", "asyncpg").unwrap();
         let config = TargetConfig {
@@ -130,8 +130,9 @@ mod tests {
             overrides: HashMap::new(),
         };
         let files = plugin.generate(&ir, &config).unwrap();
-        assert_eq!(files.len(), 3);
+        assert_eq!(files.len(), 2);
         assert!(files.iter().any(|f| f.path == "models.py"));
-        assert!(files.iter().any(|f| f.path == "client.py"));
+        assert!(files.iter().any(|f| f.path.ends_with("_queries.py")));
+        assert!(!files.iter().any(|f| f.path == "client.py"));
     }
 }

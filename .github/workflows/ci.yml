@@ -51,12 +51,13 @@ jobs:
           cache: false
 
       - name: Populate go.sum for the typecheck-go scaffold
-        # `go build` refuses to resolve pgx without a matching go.sum.
-        # `go mod download MODULE` is the one form that always writes go.sum
-        # entries for the target module (bare `go mod download` is a no-op
-        # when go.sum is absent). Scripted per require so this stays explicit.
+        # `go build` requires go.sum entries for pgx's transitive graph
+        # (pgpassfile, pgservicefile, golang.org/x/crypto, x/text). `go mod
+        # download` on a single module only covers its top-level checksum.
+        # `go mod tidy` walks imports from anchor.go and writes go.sum
+        # covering everything the generated code will end up compiling.
         working-directory: tests/typecheck-go
-        run: go mod download github.com/jackc/pgx/v5
+        run: go mod tidy
 
       - name: cargo fmt --check
         run: cargo fmt --all -- --check

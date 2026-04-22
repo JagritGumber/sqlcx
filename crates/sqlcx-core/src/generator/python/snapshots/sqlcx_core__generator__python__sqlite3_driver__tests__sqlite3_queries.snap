@@ -31,7 +31,7 @@ class GetUserParams:
 GET_USER_SQL = "SELECT * FROM users WHERE id = ?"
 
 def get_user(conn: Connection, params: GetUserParams) -> GetUserRow | None:
-    cur = conn.execute(GET_USER_SQL, ())
+    cur = conn.execute(GET_USER_SQL, (params.id,))
     row = cur.fetchone()
     if row is None:
         return None
@@ -51,7 +51,7 @@ class ListUsersParams:
 LIST_USERS_SQL = "SELECT id, name, email FROM users WHERE name LIKE ?"
 
 def list_users(conn: Connection, params: ListUsersParams) -> list[ListUsersRow]:
-    cur = conn.execute(LIST_USERS_SQL, ())
+    cur = conn.execute(LIST_USERS_SQL, (params.name,))
     return [ListUsersRow(*row) for row in cur.fetchall()]
 
 
@@ -64,7 +64,7 @@ class CreateUserParams:
 CREATE_USER_SQL = "INSERT INTO users (name, email, bio) VALUES (?, ?, ?)"
 
 def create_user(conn: Connection, params: CreateUserParams) -> None:
-    conn.execute(CREATE_USER_SQL, ())
+    conn.execute(CREATE_USER_SQL, (params.name, params.email, params.bio))
 
 
 @dataclass
@@ -74,7 +74,7 @@ class DeleteUserParams:
 DELETE_USER_SQL = "DELETE FROM users WHERE id = ?"
 
 def delete_user(conn: Connection, params: DeleteUserParams) -> int:
-    cur = conn.execute(DELETE_USER_SQL, ())
+    cur = conn.execute(DELETE_USER_SQL, (params.id,))
     return cur.rowcount
 
 
@@ -99,5 +99,5 @@ class ListUsersByDateRangeParams:
 LIST_USERS_BY_DATE_RANGE_SQL = "SELECT * FROM users WHERE created_at > ? AND created_at < ?"
 
 def list_users_by_date_range(conn: Connection, params: ListUsersByDateRangeParams) -> list[ListUsersByDateRangeRow]:
-    cur = conn.execute(LIST_USERS_BY_DATE_RANGE_SQL, ())
+    cur = conn.execute(LIST_USERS_BY_DATE_RANGE_SQL, (params.start_date, params.end_date))
     return [ListUsersByDateRangeRow(*row) for row in cur.fetchall()]

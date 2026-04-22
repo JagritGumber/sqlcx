@@ -13,7 +13,11 @@ pub struct MysqlConnectorGenerator;
 
 impl PyTypeMap for MysqlConnectorGenerator {}
 
-/// Rewrite $N → %s, escape literal % → %%, track occurrence order.
+/// Rewrite placeholders to mysql-connector's `%s` positional form, escape
+/// literal `%` to `%%`, and return the param indices in occurrence order.
+/// Accepts Postgres-style `$N` (stored by the PG parser) and native `?`
+/// (stored by the MySQL/SQLite parsers) — for `?` the occurrence index is
+/// the 1-based count, matching the MySQL parser's `extract_param_indices`.
 fn rewrite_mysql(sql: &str) -> (String, Vec<u32>) {
     let mut result = String::with_capacity(sql.len());
     let mut indices = Vec::new();
@@ -28,15 +32,14 @@ fn rewrite_mysql(sql: &str) -> (String, Vec<u32>) {
             }
             result.push_str("%s");
             indices.push(num_str.parse::<u32>().unwrap_or(0));
+        } else if c == '?' {
+            result.push_str("%s");
+            indices.push(indices.len() as u32 + 1);
         } else {
             result.push(c);
         }
     }
     (result, indices)
-}
-
-fn occurrence_indices(query: &QueryDef) -> Vec<u32> {
-    rewrite_mysql(&query.sql).1
 }
 
 impl PyDriverShape for MysqlConnectorGenerator {
@@ -56,7 +59,7 @@ impl PyDriverShape for MysqlConnectorGenerator {
         if query.params.is_empty() {
             return "()".to_string();
         }
-        let indices = occurrence_indices(query);
+        let indices = rewrite_mysql(&query.sql).1;
         let args: Vec<String> = indices
             .iter()
             .map(|idx| {
@@ -144,5 +147,15 @@ mod tests {
     fn escapes_literal_percent() {
         let (sql, _) = rewrite_mysql("WHERE name LIKE '%foo%' AND id = $1");
         assert_eq!(sql, "WHERE name LIKE '%%foo%%' AND id = %s");
+    }
+
+    #[test]
+    fn native_qmark_input_tracks_occurrence_indices() {
+        // MySQL/SQLite parsers store SQL with native `?` placeholders.
+        // rewrite_mysql must still emit `%s` and 1-based occurrence indices
+        // so build_params_arg doesn't produce an empty tuple.
+        let (sql, idx) = rewrite_mysql("WHERE a = ? AND b = ?");
+        assert_eq!(sql, "WHERE a = %s AND b = %s");
+        assert_eq!(idx, vec![1, 2]);
     }
 }

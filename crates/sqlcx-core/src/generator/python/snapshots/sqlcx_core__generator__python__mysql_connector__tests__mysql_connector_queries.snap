@@ -29,12 +29,12 @@ class GetUserRow:
 class GetUserParams:
     id: int
 
-GET_USER_SQL = "SELECT * FROM users WHERE id = ?"
+GET_USER_SQL = "SELECT * FROM users WHERE id = %s"
 
 def get_user(conn: MySQLConnection, params: GetUserParams) -> GetUserRow | None:
     cur = conn.cursor()
     try:
-        cur.execute(GET_USER_SQL, ())
+        cur.execute(GET_USER_SQL, (params.id,))
         row = cur.fetchone()
         if row is None:
             return None
@@ -53,12 +53,12 @@ class ListUsersRow:
 class ListUsersParams:
     name: str
 
-LIST_USERS_SQL = "SELECT id, name, email FROM users WHERE name LIKE ?"
+LIST_USERS_SQL = "SELECT id, name, email FROM users WHERE name LIKE %s"
 
 def list_users(conn: MySQLConnection, params: ListUsersParams) -> list[ListUsersRow]:
     cur = conn.cursor()
     try:
-        cur.execute(LIST_USERS_SQL, ())
+        cur.execute(LIST_USERS_SQL, (params.name,))
         return [ListUsersRow(*row) for row in cur.fetchall()]
     finally:
         cur.close()
@@ -70,12 +70,12 @@ class CreateUserParams:
     email: str
     bio: str
 
-CREATE_USER_SQL = "INSERT INTO users (name, email, bio) VALUES (?, ?, ?)"
+CREATE_USER_SQL = "INSERT INTO users (name, email, bio) VALUES (%s, %s, %s)"
 
 def create_user(conn: MySQLConnection, params: CreateUserParams) -> None:
     cur = conn.cursor()
     try:
-        cur.execute(CREATE_USER_SQL, ())
+        cur.execute(CREATE_USER_SQL, (params.name, params.email, params.bio))
     finally:
         cur.close()
 
@@ -84,12 +84,12 @@ def create_user(conn: MySQLConnection, params: CreateUserParams) -> None:
 class DeleteUserParams:
     id: int
 
-DELETE_USER_SQL = "DELETE FROM users WHERE id = ?"
+DELETE_USER_SQL = "DELETE FROM users WHERE id = %s"
 
 def delete_user(conn: MySQLConnection, params: DeleteUserParams) -> int:
     cur = conn.cursor()
     try:
-        cur.execute(DELETE_USER_SQL, ())
+        cur.execute(DELETE_USER_SQL, (params.id,))
         return cur.rowcount
     finally:
         cur.close()
@@ -114,12 +114,12 @@ class ListUsersByDateRangeParams:
     start_date: datetime
     end_date: datetime
 
-LIST_USERS_BY_DATE_RANGE_SQL = "SELECT * FROM users WHERE created_at > ? AND created_at < ?"
+LIST_USERS_BY_DATE_RANGE_SQL = "SELECT * FROM users WHERE created_at > %s AND created_at < %s"
 
 def list_users_by_date_range(conn: MySQLConnection, params: ListUsersByDateRangeParams) -> list[ListUsersByDateRangeRow]:
     cur = conn.cursor()
     try:
-        cur.execute(LIST_USERS_BY_DATE_RANGE_SQL, ())
+        cur.execute(LIST_USERS_BY_DATE_RANGE_SQL, (params.start_date, params.end_date))
         return [ListUsersByDateRangeRow(*row) for row in cur.fetchall()]
     finally:
         cur.close()

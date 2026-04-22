@@ -51,11 +51,12 @@ jobs:
           cache: false
 
       - name: Populate go.sum for the typecheck-go scaffold
-        # `go build` requires a matching go.sum. We don't commit one because
-        # resolved checksums would churn with the runner's module cache.
-        # `go mod download` writes go.sum before the Rust tests invoke go build.
+        # `go build` refuses to resolve pgx without a matching go.sum.
+        # `go mod download MODULE` is the one form that always writes go.sum
+        # entries for the target module (bare `go mod download` is a no-op
+        # when go.sum is absent). Scripted per require so this stays explicit.
         working-directory: tests/typecheck-go
-        run: go mod download
+        run: go mod download github.com/jackc/pgx/v5
 
       - name: cargo fmt --check
         run: cargo fmt --all -- --check

@@ -17,9 +17,13 @@ class GetUserRow:
     name: str
     email: str
     bio: str | None
-    status: str
-    tags: list[str] | None
+    role: str
+    preferences: Any | None
+    is_active: bool
+    score: float | None
+    avatar: bytes | None
     created_at: datetime
+    full_name: str | None
 
 @dataclass
 class GetUserParams:
@@ -49,7 +53,7 @@ class ListUsersRow:
 class ListUsersParams:
     name: str
 
-LIST_USERS_SQL = "SELECT id, name, email FROM users WHERE name ILIKE %s"
+LIST_USERS_SQL = "SELECT id, name, email FROM users WHERE name LIKE %s"
 
 def list_users(conn: MySQLConnection, params: ListUsersParams) -> list[ListUsersRow]:
     cur = conn.cursor()
@@ -97,9 +101,13 @@ class ListUsersByDateRangeRow:
     name: str
     email: str
     bio: str | None
-    status: str
-    tags: list[str] | None
+    role: str
+    preferences: Any | None
+    is_active: bool
+    score: float | None
+    avatar: bytes | None
     created_at: datetime
+    full_name: str | None
 
 @dataclass
 class ListUsersByDateRangeParams:

@@ -404,6 +404,6 @@ fn cli_generate_keeps_files_from_multiple_targets_in_same_out_dir() {
     assert!(dir.path().join("shared/users.queries.ts").exists());
     assert!(!dir.path().join("shared/client.ts").exists());
     assert!(dir.path().join("shared/models.py").exists());
-    assert!(dir.path().join("shared/client.py").exists());
     assert!(dir.path().join("shared/users_queries.py").exists());
+    assert!(!dir.path().join("shared/client.py").exists());
 }

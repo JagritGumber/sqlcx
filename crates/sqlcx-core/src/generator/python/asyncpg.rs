@@ -1,162 +1,84 @@
-// asyncpg driver generator for Python
-
-use std::collections::BTreeMap;
-use std::path::Path;
+// asyncpg driver. Emits queries.py only. Native $N placeholders, positional
+// args, async functions against asyncpg.Connection. Rows hydrate via
+// dict(row) because asyncpg Records are mapping-like.
 
 use crate::error::Result;
 use crate::generator::python::common::{
-    DefaultPyTypeMap, escape_sql, generate_params_class, generate_row_class,
+    PyBodyCtx, PyDriverShape, PyTypeMap, generate_driver_files,
 };
 use crate::generator::{DriverGenerator, GeneratedFile};
 use crate::ir::{QueryCommand, QueryDef, SqlcxIR};
-use crate::utils::{pascal_case, snake_case};
 
 pub struct AsyncpgGenerator;
 
-fn generate_query_function(query: &QueryDef) -> String {
-    let fn_name = snake_case(&query.name);
-    let row_class = generate_row_class(&DefaultPyTypeMap, query);
-    let params_class = generate_params_class(&DefaultPyTypeMap, query);
-    let has_params = !query.params.is_empty();
-    let params_type_name = format!("{}Params", pascal_case(&query.name));
-    let sql_const = format!(
-        "{}_SQL = \"{}\"",
-        fn_name.to_uppercase(),
-        escape_sql(&query.sql)
-    );
+impl PyTypeMap for AsyncpgGenerator {}
 
-    let params_sig = if has_params {
-        format!(", params: {}", params_type_name)
-    } else {
-        String::new()
-    };
-
-    let params_arg = if has_params {
+impl PyDriverShape for AsyncpgGenerator {
+    fn driver_import(&self) -> &'static str {
+        "from asyncpg import Connection"
+    }
+    fn connection_type(&self) -> &'static str {
+        "Connection"
+    }
+    fn is_async(&self) -> bool {
+        true
+    }
+    fn rewrite_sql(&self, query: &QueryDef) -> String {
+        // asyncpg uses native $N — no rewrite.
+        query.sql.clone()
+    }
+    fn build_params_arg(&self, query: &QueryDef) -> String {
+        if query.params.is_empty() {
+            return String::new();
+        }
+        // Positional args appended after the SQL const: ", params.a, params.b"
+        // in $N order (params already sorted by index).
         let args: Vec<String> = query
             .params
             .iter()
             .map(|p| format!("params.{}", p.name))
             .collect();
         format!(", {}", args.join(", "))
-    } else {
-        String::new()
-    };
-
-    let (return_type, body) = match query.command {
-        QueryCommand::One => {
-            let type_name = format!("{}Row", pascal_case(&query.name));
-            (
-                format!("{} | None", type_name),
+    }
+    fn render_body(&self, ctx: &PyBodyCtx<'_>) -> (String, String) {
+        let (sc, rt, pa) = (ctx.sql_const, ctx.row_type, ctx.params_arg);
+        match ctx.command {
+            QueryCommand::One => (
+                format!("{rt} | None"),
                 format!(
-                    "    row = await conn.fetchrow({}_SQL{})\n    if row is None:\n        return None\n    return {}(**dict(row))",
-                    fn_name.to_uppercase(),
-                    params_arg,
-                    type_name
+                    "    row = await conn.fetchrow({sc}{pa})\n    if row is None:\n        return None\n    return {rt}(**dict(row))"
                 ),
-            )
-        }
-        QueryCommand::Many => {
-            let type_name = format!("{}Row", pascal_case(&query.name));
-            (
-                format!("list[{}]", type_name),
+            ),
+            QueryCommand::Many => (
+                format!("list[{rt}]"),
                 format!(
-                    "    rows = await conn.fetch({}_SQL{})\n    return [{}(**dict(row)) for row in rows]",
-                    fn_name.to_uppercase(),
-                    params_arg,
-                    type_name
+                    "    rows = await conn.fetch({sc}{pa})\n    return [{rt}(**dict(row)) for row in rows]"
                 ),
-            )
-        }
-        QueryCommand::Exec => (
-            "None".to_string(),
-            format!(
-                "    await conn.execute({}_SQL{})",
-                fn_name.to_uppercase(),
-                params_arg
             ),
-        ),
-        QueryCommand::ExecResult => (
-            "int".to_string(),
-            format!(
-                "    result = await conn.execute({}_SQL{})\n    return int(result.split()[-1])",
-                fn_name.to_uppercase(),
-                params_arg
+            QueryCommand::Exec => (
+                "None".to_string(),
+                format!("    await conn.execute({sc}{pa})"),
             ),
-        ),
-    };
-
-    let mut parts: Vec<String> = Vec::new();
-    if !row_class.is_empty() {
-        parts.push(row_class);
-    }
-    if !params_class.is_empty() {
-        parts.push(params_class);
-    }
-    parts.push(sql_const);
-    parts.push(format!(
-        "async def {}(conn: Connection{}) -> {}:\n{}",
-        fn_name, params_sig, return_type, body
-    ));
-
-    parts.join("\n\n")
-}
-
-impl AsyncpgGenerator {
-    pub fn generate_client(&self) -> String {
-        r#"# Code generated by sqlcx. DO NOT EDIT.
-from __future__ import annotations
-
-from asyncpg import Connection
-"#
-        .to_string()
-    }
-
-    pub fn generate_query_functions(&self, queries: &[QueryDef]) -> String {
-        let header = "# Code generated by sqlcx. DO NOT EDIT.\nfrom __future__ import annotations\n\nfrom dataclasses import dataclass\nfrom typing import Any\nfrom datetime import datetime\nfrom asyncpg import Connection";
-        let functions: Vec<String> = queries.iter().map(generate_query_function).collect();
-        if functions.is_empty() {
-            return format!("{header}\n");
+            QueryCommand::ExecResult => (
+                "int".to_string(),
+                format!(
+                    "    result = await conn.execute({sc}{pa})\n    return int(result.split()[-1])"
+                ),
+            ),
         }
-        format!("{header}\n\n\n{}", functions.join("\n\n\n"))
     }
 }
 
 impl DriverGenerator for AsyncpgGenerator {
     fn generate(&self, ir: &SqlcxIR) -> Result<Vec<GeneratedFile>> {
-        let mut files = Vec::new();
-
-        files.push(GeneratedFile {
-            path: "client.py".to_string(),
-            content: self.generate_client(),
-        });
-
-        let mut grouped: BTreeMap<String, Vec<&QueryDef>> = BTreeMap::new();
-        for query in &ir.queries {
-            grouped
-                .entry(query.source_file.clone())
-                .or_default()
-                .push(query);
-        }
-        for (source_file, queries) in &grouped {
-            let basename = Path::new(source_file)
-                .file_stem()
-                .unwrap_or_default()
-                .to_string_lossy();
-            let owned: Vec<QueryDef> = queries.iter().map(|q| (*q).clone()).collect();
-            files.push(GeneratedFile {
-                path: format!("{}_queries.py", basename),
-                content: self.generate_query_functions(&owned),
-            });
-        }
-
-        Ok(files)
+        generate_driver_files(self, ir)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ir::*;
+    use crate::generator::python::common::generate_queries_file;
     use crate::parser::DatabaseParser;
     use crate::parser::postgres::PostgresParser;
 
@@ -176,22 +98,12 @@ mod tests {
     }
 
     #[test]
-    fn generates_client_file() {
-        let gen_ = AsyncpgGenerator;
-        let content = gen_.generate_client();
-        assert!(content.contains("asyncpg"));
-        assert!(content.contains("DO NOT EDIT"));
-        insta::assert_snapshot!("asyncpg_client", content);
-    }
-
-    #[test]
-    fn generates_query_functions() {
+    fn generates_asyncpg_query_functions() {
         let ir = parse_fixture_ir();
-        let gen_ = AsyncpgGenerator;
-        let content = gen_.generate_query_functions(&ir.queries);
+        let content = generate_queries_file(&AsyncpgGenerator, &ir.queries);
+        assert!(content.contains("from asyncpg import Connection"));
         assert!(content.contains("async def get_user"));
-        assert!(content.contains("class GetUserRow"));
-        assert!(content.contains("GET_USER_SQL"));
+        assert!(content.contains("await conn.fetchrow"));
         insta::assert_snapshot!("asyncpg_queries", content);
     }
 }

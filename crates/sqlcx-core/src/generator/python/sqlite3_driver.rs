@@ -24,6 +24,11 @@ impl PyTypeMap for Sqlite3Generator {
     }
 }
 
+/// Normalize placeholders to sqlite3's `?` positional form and return the
+/// param indices in occurrence order. Accepts Postgres-style `$N` (stored
+/// by the PG parser) and native `?` (stored by the SQLite/MySQL parsers) —
+/// for `?` the occurrence index is the 1-based count, matching the parser's
+/// `extract_param_indices`.
 fn rewrite_qmark(sql: &str) -> (String, Vec<u32>) {
     let mut result = String::with_capacity(sql.len());
     let mut indices = Vec::new();
@@ -36,6 +41,9 @@ fn rewrite_qmark(sql: &str) -> (String, Vec<u32>) {
             }
             result.push('?');
             indices.push(num_str.parse::<u32>().unwrap_or(0));
+        } else if c == '?' {
+            result.push('?');
+            indices.push(indices.len() as u32 + 1);
         } else {
             result.push(c);
         }
@@ -135,5 +143,15 @@ mod tests {
         assert!(content.contains("def get_user"));
         assert!(!content.contains("$1"));
         insta::assert_snapshot!("sqlite3_queries", content);
+    }
+
+    #[test]
+    fn native_qmark_input_tracks_occurrence_indices() {
+        // SQLite parser stores SQL with native `?` placeholders. rewrite_qmark
+        // must still emit 1-based occurrence indices so build_params_arg
+        // doesn't produce an empty tuple.
+        let (sql, idx) = rewrite_qmark("WHERE a = ? AND b = ?");
+        assert_eq!(sql, "WHERE a = ? AND b = ?");
+        assert_eq!(idx, vec![1, 2]);
     }
 }

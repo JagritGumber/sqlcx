@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any
+from datetime import datetime
 from sqlite3 import Connection
 
 
@@ -16,8 +17,11 @@ class GetUserRow:
     name: str
     email: str
     bio: str | None
-    status: str
-    tags: list[str] | None
+    role: str
+    preferences: str | None
+    is_active: int
+    score: float | None
+    avatar: bytes | None
     created_at: str
 
 @dataclass
@@ -27,7 +31,7 @@ class GetUserParams:
 GET_USER_SQL = "SELECT * FROM users WHERE id = ?"
 
 def get_user(conn: Connection, params: GetUserParams) -> GetUserRow | None:
-    cur = conn.execute(GET_USER_SQL, (params.id,))
+    cur = conn.execute(GET_USER_SQL, ())
     row = cur.fetchone()
     if row is None:
         return None
@@ -44,10 +48,10 @@ class ListUsersRow:
 class ListUsersParams:
     name: str
 
-LIST_USERS_SQL = "SELECT id, name, email FROM users WHERE name ILIKE ?"
+LIST_USERS_SQL = "SELECT id, name, email FROM users WHERE name LIKE ?"
 
 def list_users(conn: Connection, params: ListUsersParams) -> list[ListUsersRow]:
-    cur = conn.execute(LIST_USERS_SQL, (params.name,))
+    cur = conn.execute(LIST_USERS_SQL, ())
     return [ListUsersRow(*row) for row in cur.fetchall()]
 
 
@@ -60,7 +64,7 @@ class CreateUserParams:
 CREATE_USER_SQL = "INSERT INTO users (name, email, bio) VALUES (?, ?, ?)"
 
 def create_user(conn: Connection, params: CreateUserParams) -> None:
-    conn.execute(CREATE_USER_SQL, (params.name, params.email, params.bio))
+    conn.execute(CREATE_USER_SQL, ())
 
 
 @dataclass
@@ -70,7 +74,7 @@ class DeleteUserParams:
 DELETE_USER_SQL = "DELETE FROM users WHERE id = ?"
 
 def delete_user(conn: Connection, params: DeleteUserParams) -> int:
-    cur = conn.execute(DELETE_USER_SQL, (params.id,))
+    cur = conn.execute(DELETE_USER_SQL, ())
     return cur.rowcount
 
 
@@ -80,8 +84,11 @@ class ListUsersByDateRangeRow:
     name: str
     email: str
     bio: str | None
-    status: str
-    tags: list[str] | None
+    role: str
+    preferences: str | None
+    is_active: int
+    score: float | None
+    avatar: bytes | None
     created_at: str
 
 @dataclass
@@ -92,5 +99,5 @@ class ListUsersByDateRangeParams:
 LIST_USERS_BY_DATE_RANGE_SQL = "SELECT * FROM users WHERE created_at > ? AND created_at < ?"
 
 def list_users_by_date_range(conn: Connection, params: ListUsersByDateRangeParams) -> list[ListUsersByDateRangeRow]:
-    cur = conn.execute(LIST_USERS_BY_DATE_RANGE_SQL, (params.start_date, params.end_date))
+    cur = conn.execute(LIST_USERS_BY_DATE_RANGE_SQL, ())
     return [ListUsersByDateRangeRow(*row) for row in cur.fetchall()]

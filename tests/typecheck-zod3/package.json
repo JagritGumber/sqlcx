@@ -2,6 +2,7 @@
   "private": true,
   "devDependencies": {
     "zod": "^3",
+    "@types/bun": "^1",
     "typescript": "^5"
   }
 }

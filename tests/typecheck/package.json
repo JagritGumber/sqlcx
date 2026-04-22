@@ -5,6 +5,10 @@
     "zod": "^4",
     "pg": "^8",
     "@types/pg": "^8",
+    "mysql2": "^3",
+    "better-sqlite3": "^11",
+    "@types/better-sqlite3": "^7",
+    "@types/bun": "^1",
     "typescript": "^5"
   }
 }

@@ -1,10 +1,8 @@
-// Shared query-function generator for async DatabaseClient-style TS drivers
-// (pg, bun-sql). Emits `export async function foo(client, params)` bodies
-// that call `client.queryOne`, `client.query`, or `client.execute`.
-//
-// Drivers that don't fit this shape (mysql2 with $1→? placeholder rewrite,
-// better-sqlite3 with sync `db.prepare(...).get(...)` calls) do NOT use
-// this helper — they have their own body renderers.
+// Shared TS query-function generator. Per-driver divergence flows through
+// `TsDriverShape`: imports, connection type/name, async-ness, placeholder
+// rewrite, and the body of each command. No DatabaseClient wrapper, no
+// class, no client.ts — the generated queries.ts imports the raw driver
+// type and the function takes it directly.
 
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -17,60 +15,71 @@ use crate::generator::typescript::common::{
 use crate::ir::{QueryCommand, QueryDef, SqlcxIR};
 use crate::utils::{camel_case, pascal_case};
 
-/// Generate a single async-DatabaseClient-style query function.
-pub fn generate_query_function<M: TsTypeMap + ?Sized>(map: &M, query: &QueryDef) -> String {
-    let fn_name = camel_case(&query.name);
-    let row_type = generate_row_type(map, query);
-    let params_interface = generate_params_type(map, query);
-    let has_params = !query.params.is_empty();
-    let params_type_name = format!("{}Params", pascal_case(&query.name));
-    let sql_const = format!(
-        "export const {fn_name}Sql = {};",
-        json_stringify(&query.sql)
-    );
+pub struct BodyCtx<'a> {
+    pub sql_const: &'a str,
+    pub row_type: &'a str,
+    /// Positional args as an array literal: `[params.a, params.b]` (empty → `[]`).
+    pub values_arg: &'a str,
+    /// Positional args comma-separated (empty when no params): `params.a, params.b`.
+    pub values_spread: &'a str,
+    pub command: QueryCommand,
+}
 
+pub trait TsDriverShape: TsTypeMap {
+    fn imports(&self) -> String;
+    fn connection_type(&self) -> &'static str;
+    fn connection_param(&self) -> &'static str;
+    fn is_async(&self) -> bool;
+    /// Default: no rewrite (pg/bun-sql keep $N). Drivers using `?` override.
+    /// Returned indices are occurrence order of $N in the rewritten SQL; an
+    /// empty Vec means natural param-declaration order.
+    fn rewrite_placeholders(&self, sql: &str) -> (String, Vec<u32>) {
+        (sql.to_string(), Vec::new())
+    }
+    fn render_body(&self, ctx: &BodyCtx<'_>) -> (String, String);
+}
+
+pub fn generate_query_function<D: TsDriverShape + ?Sized>(driver: &D, query: &QueryDef) -> String {
+    let fn_name = camel_case(&query.name);
+    let row_type_name = format!("{}Row", pascal_case(&query.name));
+    let params_type_name = format!("{}Params", pascal_case(&query.name));
+    let sql_const_name = format!("{fn_name}Sql");
+    let has_params = !query.params.is_empty();
+    let row_type = generate_row_type(driver, query);
+    let params_interface = generate_params_type(driver, query);
+    let (rewritten_sql, indices) = driver.rewrite_placeholders(&query.sql);
+    let sql_const = format!(
+        "export const {sql_const_name} = {};",
+        json_stringify(&rewritten_sql)
+    );
     let params_sig = if has_params {
         format!(", params: {params_type_name}")
     } else {
         String::new()
     };
-
-    let values_arg = if has_params {
-        let args: Vec<String> = query
-            .params
-            .iter()
-            .map(|p| format!("params.{}", p.name))
-            .collect();
-        format!("[{}]", args.join(", "))
-    } else {
+    let values_spread = build_values_spread(query, &indices);
+    let values_arg = if values_spread.is_empty() {
         "[]".to_string()
+    } else {
+        format!("[{values_spread}]")
     };
-
-    let (return_type, body) = match query.command {
-        QueryCommand::One => {
-            let type_name = format!("{}Row", pascal_case(&query.name));
-            (
-                format!("Promise<{type_name} | null>"),
-                format!("  return client.queryOne<{type_name}>({fn_name}Sql, {values_arg});"),
-            )
-        }
-        QueryCommand::Many => {
-            let type_name = format!("{}Row", pascal_case(&query.name));
-            (
-                format!("Promise<{type_name}[]>"),
-                format!("  return client.query<{type_name}>({fn_name}Sql, {values_arg});"),
-            )
-        }
-        QueryCommand::Exec => (
-            "Promise<void>".to_string(),
-            format!("  await client.execute({fn_name}Sql, {values_arg});"),
-        ),
-        QueryCommand::ExecResult => (
-            "Promise<{ rowsAffected: number }>".to_string(),
-            format!("  return client.execute({fn_name}Sql, {values_arg});"),
-        ),
+    let ctx = BodyCtx {
+        sql_const: &sql_const_name,
+        row_type: &row_type_name,
+        values_arg: &values_arg,
+        values_spread: &values_spread,
+        command: query.command,
     };
-
+    let (return_type, body) = driver.render_body(&ctx);
+    let async_kw = if driver.is_async() { "async " } else { "" };
+    let conn = format!(
+        "{}: {}",
+        driver.connection_param(),
+        driver.connection_type()
+    );
+    let signature = format!(
+        "export {async_kw}function {fn_name}({conn}{params_sig}): {return_type} {{\n{body}\n}}"
+    );
     let mut parts: Vec<String> = Vec::new();
     if !row_type.is_empty() {
         parts.push(row_type);
@@ -79,42 +88,60 @@ pub fn generate_query_function<M: TsTypeMap + ?Sized>(map: &M, query: &QueryDef)
         parts.push(params_interface);
     }
     parts.push(sql_const);
-    parts.push(format!(
-        "export async function {fn_name}(client: DatabaseClient{params_sig}): {return_type} {{\n{body}\n}}"
-    ));
-
+    parts.push(signature);
     parts.join("\n\n")
 }
 
-/// Bundle the full queries.ts content for a list of queries.
-pub fn generate_query_functions_file<M: TsTypeMap + ?Sized>(
-    map: &M,
-    queries: &[QueryDef],
-) -> String {
-    let header = "// Code generated by sqlcx. DO NOT EDIT.\n\nimport type { DatabaseClient } from \"./client\";";
-    let functions: Vec<String> = queries
-        .iter()
-        .map(|q| generate_query_function(map, q))
-        .collect();
-    if functions.is_empty() {
-        return format!("{header}\n");
+fn build_values_spread(query: &QueryDef, indices: &[u32]) -> String {
+    if query.params.is_empty() {
+        return String::new();
     }
-    format!("{header}\n\n{}", functions.join("\n\n"))
+    let args: Vec<String> = if indices.is_empty() {
+        query
+            .params
+            .iter()
+            .map(|p| format!("params.{}", p.name))
+            .collect()
+    } else {
+        indices
+            .iter()
+            .map(|idx| {
+                query
+                    .params
+                    .iter()
+                    .find(|p| p.index == *idx)
+                    .map(|p| format!("params.{}", p.name))
+                    .unwrap_or_else(|| "undefined".to_string())
+            })
+            .collect()
+    };
+    args.join(", ")
 }
 
-/// Generate the full set of files for an async-DatabaseClient driver:
-/// client.ts + one *.queries.ts per source file, grouped deterministically.
-pub fn generate_driver_files<M: TsTypeMap + ?Sized>(
-    map: &M,
-    client_ts: String,
+pub fn generate_queries_file<D: TsDriverShape + ?Sized>(
+    driver: &D,
+    queries: &[QueryDef],
+) -> String {
+    let header = format!(
+        "// Code generated by sqlcx. DO NOT EDIT.\n\n{}",
+        driver.imports()
+    );
+    let functions: Vec<String> = queries
+        .iter()
+        .map(|q| generate_query_function(driver, q))
+        .collect();
+    if functions.is_empty() {
+        format!("{header}\n")
+    } else {
+        format!("{header}\n\n{}", functions.join("\n\n"))
+    }
+}
+
+pub fn generate_driver_files<D: TsDriverShape + ?Sized>(
+    driver: &D,
     ir: &SqlcxIR,
 ) -> Result<Vec<GeneratedFile>> {
     let mut files = Vec::new();
-    files.push(GeneratedFile {
-        path: "client.ts".to_string(),
-        content: client_ts,
-    });
-
     let mut grouped: BTreeMap<String, Vec<&QueryDef>> = BTreeMap::new();
     for query in &ir.queries {
         grouped
@@ -130,9 +157,8 @@ pub fn generate_driver_files<M: TsTypeMap + ?Sized>(
         let owned: Vec<QueryDef> = queries.iter().map(|q| (*q).clone()).collect();
         files.push(GeneratedFile {
             path: format!("{}.queries.ts", basename),
-            content: generate_query_functions_file(map, &owned),
+            content: generate_queries_file(driver, &owned),
         });
     }
-
     Ok(files)
 }

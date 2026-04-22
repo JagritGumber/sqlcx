@@ -1,68 +1,69 @@
-// pg (node-postgres) driver generator.
-//
-// Thin adapter over `common::generate_driver_files`. pg uses the default
-// TS type mapping and the async DatabaseClient body shape, so the only
-// driver-specific piece is the client.ts content.
+// pg (node-postgres) driver. Emits queries.ts only — no client wrapper.
+// Functions take `pool: Pool` directly and call `pool.query<Row>(...)`.
 
 use crate::error::Result;
-use crate::generator::typescript::common::{TsTypeMap, generate_driver_files};
+use crate::generator::typescript::common::{
+    BodyCtx, TsDriverShape, TsTypeMap, generate_driver_files,
+};
 use crate::generator::{DriverGenerator, GeneratedFile};
-use crate::ir::SqlcxIR;
+use crate::ir::{QueryCommand, SqlcxIR};
 
 pub struct PgGenerator;
 
-struct PgTypeMap;
-impl TsTypeMap for PgTypeMap {}
+impl TsTypeMap for PgGenerator {}
 
-impl PgGenerator {
-    /// Generate the client.ts file content (DatabaseClient interface + PgClient adapter).
-    pub fn generate_client(&self) -> String {
-        r#"import { Pool, type QueryResult } from "pg";
-
-export interface DatabaseClient {
-  query<T>(sql: string, params: unknown[]): Promise<T[]>;
-  queryOne<T>(sql: string, params: unknown[]): Promise<T | null>;
-  execute(sql: string, params: unknown[]): Promise<{ rowsAffected: number }>;
-}
-
-export class PgClient implements DatabaseClient {
-  private pool: Pool;
-
-  constructor(pool: Pool) {
-    this.pool = pool;
-  }
-
-  async query<T>(text: string, values?: unknown[]): Promise<T[]> {
-    const result: QueryResult = await this.pool.query(text, values);
-    return result.rows as T[];
-  }
-
-  async queryOne<T>(text: string, values?: unknown[]): Promise<T | null> {
-    const rows = await this.query<T>(text, values);
-    return rows[0] ?? null;
-  }
-
-  async execute(text: string, values?: unknown[]): Promise<{ rowsAffected: number }> {
-    const result: QueryResult = await this.pool.query(text, values);
-    return { rowsAffected: result.rowCount ?? 0 };
-  }
-}"#
-        .to_string()
+impl TsDriverShape for PgGenerator {
+    fn imports(&self) -> String {
+        "import type { Pool } from \"pg\";".to_string()
+    }
+    fn connection_type(&self) -> &'static str {
+        "Pool"
+    }
+    fn connection_param(&self) -> &'static str {
+        "pool"
+    }
+    fn is_async(&self) -> bool {
+        true
+    }
+    fn render_body(&self, ctx: &BodyCtx<'_>) -> (String, String) {
+        let (sc, rt, va) = (ctx.sql_const, ctx.row_type, ctx.values_arg);
+        match ctx.command {
+            QueryCommand::One => (
+                format!("Promise<{rt} | null>"),
+                format!(
+                    "  const result = await pool.query<{rt}>({sc}, {va});\n  return result.rows[0] ?? null;"
+                ),
+            ),
+            QueryCommand::Many => (
+                format!("Promise<{rt}[]>"),
+                format!(
+                    "  const result = await pool.query<{rt}>({sc}, {va});\n  return result.rows;"
+                ),
+            ),
+            QueryCommand::Exec => (
+                "Promise<void>".to_string(),
+                format!("  await pool.query({sc}, {va});"),
+            ),
+            QueryCommand::ExecResult => (
+                "Promise<{ rowsAffected: number }>".to_string(),
+                format!(
+                    "  const result = await pool.query({sc}, {va});\n  return {{ rowsAffected: result.rowCount ?? 0 }};"
+                ),
+            ),
+        }
     }
 }
 
 impl DriverGenerator for PgGenerator {
     fn generate(&self, ir: &SqlcxIR) -> Result<Vec<GeneratedFile>> {
-        generate_driver_files(&PgTypeMap, self.generate_client(), ir)
+        generate_driver_files(self, ir)
     }
 }
-
-// ── Tests ─────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ir::*;
+    use crate::generator::typescript::common::generate_queries_file;
     use crate::parser::DatabaseParser;
     use crate::parser::postgres::PostgresParser;
 
@@ -82,26 +83,12 @@ mod tests {
     }
 
     #[test]
-    fn generates_pg_client() {
-        let gen_ = PgGenerator;
-        let content = gen_.generate_client();
-        assert!(content.contains("import { Pool"));
-        assert!(content.contains("export class PgClient implements DatabaseClient"));
-        assert!(content.contains("result.rows"));
-        assert!(content.contains("result.rowCount"));
-        insta::assert_snapshot!("pg_client", content);
-    }
-
-    #[test]
     fn generates_pg_query_functions() {
         let ir = parse_fixture_ir();
-        let gen_ = PgGenerator;
-        let files = gen_.generate(&ir).unwrap();
-        let query_file = files
-            .iter()
-            .find(|f| f.path.ends_with(".queries.ts"))
-            .unwrap();
-        assert!(query_file.content.contains("export async function getUser"));
-        insta::assert_snapshot!("pg_queries", query_file.content);
+        let content = generate_queries_file(&PgGenerator, &ir.queries);
+        assert!(content.contains("import type { Pool } from \"pg\""));
+        assert!(content.contains("pool.query"));
+        assert!(content.contains("export async function getUser"));
+        insta::assert_snapshot!("pg_queries", content);
     }
 }

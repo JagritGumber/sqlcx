@@ -1,22 +1,19 @@
-// better-sqlite3 driver generator for TypeScript (synchronous SQLite)
-
-use std::collections::BTreeMap;
-use std::path::Path;
+// better-sqlite3 driver (synchronous). Emits queries.ts only. Functions take
+// `db: Database.Database` directly (instance type via default-export's
+// namespace side) and call `db.prepare(sql).get/all/run(...spread)`.
 
 use crate::error::Result;
 use crate::generator::typescript::common::{
-    TsTypeMap, generate_params_type, generate_row_type, json_stringify,
+    BodyCtx, TsDriverShape, TsTypeMap, generate_driver_files,
 };
 use crate::generator::{DriverGenerator, GeneratedFile};
-use crate::ir::{QueryCommand, QueryDef, SqlcxIR};
-use crate::utils::{camel_case, pascal_case};
+use crate::ir::{QueryCommand, SqlcxIR};
 
 pub struct BetterSqlite3Generator;
 
-// SQLite has no native boolean/date/json/binary types, so better-sqlite3 maps:
-//   Boolean → number (0/1),  Date → string (text),  Json → string (text),  Binary → Buffer.
-struct BetterSqlite3TypeMap;
-impl TsTypeMap for BetterSqlite3TypeMap {
+// SQLite has no native boolean/date/json types; better-sqlite3 surfaces them
+// as number/text and returns Buffer for blobs.
+impl TsTypeMap for BetterSqlite3Generator {
     fn boolean_ty(&self) -> &'static str {
         "number"
     }
@@ -31,24 +28,18 @@ impl TsTypeMap for BetterSqlite3TypeMap {
     }
 }
 
-/// Convert $1, $2, ... placeholders to ? for SQLite.
-/// Returns the converted SQL and the param indices in occurrence order.
 fn to_sqlite_params(sql: &str) -> (String, Vec<u32>) {
     let mut result = String::with_capacity(sql.len());
     let mut indices = Vec::new();
     let mut chars = sql.chars().peekable();
     while let Some(c) = chars.next() {
-        if c == '$' {
-            if chars.peek().is_some_and(|ch| ch.is_ascii_digit()) {
-                let mut num_str = String::new();
-                while chars.peek().is_some_and(|ch| ch.is_ascii_digit()) {
-                    num_str.push(chars.next().unwrap());
-                }
-                result.push('?');
-                indices.push(num_str.parse::<u32>().unwrap_or(0));
-            } else {
-                result.push(c);
+        if c == '$' && chars.peek().is_some_and(|ch| ch.is_ascii_digit()) {
+            let mut num_str = String::new();
+            while chars.peek().is_some_and(|ch| ch.is_ascii_digit()) {
+                num_str.push(chars.next().unwrap());
             }
+            result.push('?');
+            indices.push(num_str.parse::<u32>().unwrap_or(0));
         } else {
             result.push(c);
         }
@@ -56,152 +47,64 @@ fn to_sqlite_params(sql: &str) -> (String, Vec<u32>) {
     (result, indices)
 }
 
-fn generate_query_function(query: &QueryDef) -> String {
-    let fn_name = camel_case(&query.name);
-    let row_type = generate_row_type(&BetterSqlite3TypeMap, query);
-    let params_interface = generate_params_type(&BetterSqlite3TypeMap, query);
-    let has_params = !query.params.is_empty();
-    let params_type_name = format!("{}Params", pascal_case(&query.name));
-    let (sqlite_sql, param_indices) = to_sqlite_params(&query.sql);
-    let sql_const = format!(
-        "export const {fn_name}Sql = {};",
-        json_stringify(&sqlite_sql)
-    );
-
-    let params_sig = if has_params {
-        format!(", params: {params_type_name}")
-    } else {
-        String::new()
-    };
-
-    // Build args in SQL occurrence order (handles $2 AND $1, $1 OR $1)
-    let spread_args = if has_params {
-        let args: Vec<String> = param_indices
-            .iter()
-            .map(|idx| {
-                query
-                    .params
-                    .iter()
-                    .find(|p| p.index == *idx)
-                    .map(|p| format!("params.{}", p.name))
-                    .unwrap_or_else(|| "undefined".to_string())
-            })
-            .collect();
-        args.join(", ")
-    } else {
-        String::new()
-    };
-
-    // better-sqlite3 is synchronous — no async/await/Promise
-    let (return_type, body) = match query.command {
-        QueryCommand::One => {
-            let type_name = format!("{}Row", pascal_case(&query.name));
-            (
-                format!("{type_name} | undefined"),
-                format!(
-                    "  return db.prepare({fn_name}Sql).get({spread_args}) as {type_name} | undefined;"
-                ),
-            )
-        }
-        QueryCommand::Many => {
-            let type_name = format!("{}Row", pascal_case(&query.name));
-            (
-                format!("{type_name}[]"),
-                format!("  return db.prepare({fn_name}Sql).all({spread_args}) as {type_name}[];"),
-            )
-        }
-        QueryCommand::Exec => (
-            "void".to_string(),
-            format!("  db.prepare({fn_name}Sql).run({spread_args});"),
-        ),
-        QueryCommand::ExecResult => (
-            "{ changes: number }".to_string(),
-            format!(
-                "  const result = db.prepare({fn_name}Sql).run({spread_args});\n  return {{ changes: result.changes }};"
+impl TsDriverShape for BetterSqlite3Generator {
+    fn imports(&self) -> String {
+        "import type Database from \"better-sqlite3\";".to_string()
+    }
+    fn connection_type(&self) -> &'static str {
+        "Database.Database"
+    }
+    fn connection_param(&self) -> &'static str {
+        "db"
+    }
+    fn is_async(&self) -> bool {
+        false
+    }
+    fn rewrite_placeholders(&self, sql: &str) -> (String, Vec<u32>) {
+        to_sqlite_params(sql)
+    }
+    fn render_body(&self, ctx: &BodyCtx<'_>) -> (String, String) {
+        let (sc, rt, vs) = (ctx.sql_const, ctx.row_type, ctx.values_spread);
+        match ctx.command {
+            QueryCommand::One => (
+                format!("{rt} | undefined"),
+                format!("  return db.prepare({sc}).get({vs}) as {rt} | undefined;"),
             ),
-        ),
-    };
-
-    let mut parts: Vec<String> = Vec::new();
-    if !row_type.is_empty() {
-        parts.push(row_type);
-    }
-    if !params_interface.is_empty() {
-        parts.push(params_interface);
-    }
-    parts.push(sql_const);
-    parts.push(format!(
-        "export function {fn_name}(db: Database{params_sig}): {return_type} {{\n{body}\n}}"
-    ));
-
-    parts.join("\n\n")
-}
-
-impl BetterSqlite3Generator {
-    pub fn generate_client(&self) -> String {
-        r#"import Database from "better-sqlite3";
-
-export type { Database };
-"#
-        .to_string()
-    }
-
-    pub fn generate_query_functions(&self, queries: &[QueryDef]) -> String {
-        let header = "// Code generated by sqlcx. DO NOT EDIT.\n\nimport type { Database } from \"./client\";";
-        let functions: Vec<String> = queries.iter().map(generate_query_function).collect();
-        if functions.is_empty() {
-            return format!("{header}\n");
+            QueryCommand::Many => (
+                format!("{rt}[]"),
+                format!("  return db.prepare({sc}).all({vs}) as {rt}[];"),
+            ),
+            QueryCommand::Exec => ("void".to_string(), format!("  db.prepare({sc}).run({vs});")),
+            QueryCommand::ExecResult => (
+                "{ changes: number }".to_string(),
+                format!(
+                    "  const result = db.prepare({sc}).run({vs});\n  return {{ changes: result.changes }};"
+                ),
+            ),
         }
-        format!("{header}\n\n{}", functions.join("\n\n"))
     }
 }
 
 impl DriverGenerator for BetterSqlite3Generator {
     fn generate(&self, ir: &SqlcxIR) -> Result<Vec<GeneratedFile>> {
-        let mut files = Vec::new();
-
-        files.push(GeneratedFile {
-            path: "client.ts".to_string(),
-            content: self.generate_client(),
-        });
-
-        let mut grouped: BTreeMap<String, Vec<&QueryDef>> = BTreeMap::new();
-        for query in &ir.queries {
-            grouped
-                .entry(query.source_file.clone())
-                .or_default()
-                .push(query);
-        }
-        for (source_file, queries) in &grouped {
-            let basename = Path::new(source_file)
-                .file_stem()
-                .unwrap_or_default()
-                .to_string_lossy();
-            let owned: Vec<QueryDef> = queries.iter().map(|q| (*q).clone()).collect();
-            files.push(GeneratedFile {
-                path: format!("{}.queries.ts", basename),
-                content: self.generate_query_functions(&owned),
-            });
-        }
-
-        Ok(files)
+        generate_driver_files(self, ir)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ir::*;
+    use crate::generator::typescript::common::generate_queries_file;
     use crate::parser::DatabaseParser;
-    use crate::parser::postgres::PostgresParser;
+    use crate::parser::sqlite::SqliteParser;
 
     fn parse_fixture_ir() -> SqlcxIR {
-        let schema_sql = include_str!("../../../../../tests/fixtures/schema.sql");
-        let queries_sql = include_str!("../../../../../tests/fixtures/queries/users.sql");
-        let parser = PostgresParser::new();
+        let schema_sql = include_str!("../../../../../tests/fixtures/sqlite_schema.sql");
+        let queries_sql = include_str!("../../../../../tests/fixtures/sqlite_queries/users.sql");
+        let parser = SqliteParser::new();
         let (tables, enums) = parser.parse_schema(schema_sql).unwrap();
         let queries = parser
-            .parse_queries(queries_sql, &tables, &enums, "queries/users.sql")
+            .parse_queries(queries_sql, &tables, &enums, "sqlite_queries/users.sql")
             .unwrap();
         SqlcxIR {
             tables,
@@ -211,21 +114,19 @@ mod tests {
     }
 
     #[test]
-    fn generates_client_file() {
-        let gen_ = BetterSqlite3Generator;
-        let content = gen_.generate_client();
-        assert!(content.contains("better-sqlite3"));
-        insta::assert_snapshot!("better_sqlite3_client", content);
+    fn generates_better_sqlite3_query_functions() {
+        let ir = parse_fixture_ir();
+        let content = generate_queries_file(&BetterSqlite3Generator, &ir.queries);
+        assert!(content.contains("import type Database from \"better-sqlite3\""));
+        assert!(content.contains("Database.Database"));
+        assert!(content.contains("db.prepare"));
+        insta::assert_snapshot!("better_sqlite3_queries", content);
     }
 
     #[test]
-    fn generates_query_functions() {
-        let ir = parse_fixture_ir();
-        let gen_ = BetterSqlite3Generator;
-        let content = gen_.generate_query_functions(&ir.queries);
-        // Synchronous — no async
-        assert!(content.contains("export function getUser"));
-        assert!(!content.contains("async"));
-        insta::assert_snapshot!("better_sqlite3_queries", content);
+    fn rewrites_dollar_n_to_question_mark() {
+        let (sql, idx) = to_sqlite_params("WHERE a = $1 AND b = $2");
+        assert_eq!(sql, "WHERE a = ? AND b = ?");
+        assert_eq!(idx, vec![1, 2]);
     }
 }

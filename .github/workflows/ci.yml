@@ -39,6 +39,26 @@ jobs:
       - name: Install TypeScript globally (so npx tsc resolves from PATH)
         run: npm install -g typescript@5
 
+      - name: Install Python (for py_compile e2e tests)
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Go (for go build e2e tests)
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+          cache: false
+
+      - name: Populate go.sum for the typecheck-go scaffold
+        # `go build` requires go.sum entries for pgx's transitive graph
+        # (pgpassfile, pgservicefile, golang.org/x/crypto, x/text). `go mod
+        # download` on a single module only covers its top-level checksum.
+        # `go mod tidy` walks imports from anchor.go and writes go.sum
+        # covering everything the generated code will end up compiling.
+        working-directory: tests/typecheck-go
+        run: go mod tidy
+
       - name: cargo fmt --check
         run: cargo fmt --all -- --check
 

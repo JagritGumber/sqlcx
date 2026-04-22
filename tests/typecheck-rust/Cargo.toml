@@ -1,0 +1,26 @@
+[package]
+name = "sqlcx-typecheck-rust"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+# Scaffold crate used by crates/sqlcx-core/tests/typecheck_rust.rs to run
+# `cargo check` against sqlcx-generated Rust output for every driver. It is
+# intentionally outside the workspace: each e2e test overwrites src/lib.rs
+# with a `pub mod` facade over the generated files.
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+chrono = { version = "0.4", features = ["serde"] }
+tokio = { version = "1", features = ["rt"] }
+tokio-postgres = { version = "0.7", features = ["with-chrono-0_4"] }
+sqlx = { version = "0.8", default-features = false, features = [
+    "runtime-tokio-rustls",
+    "postgres",
+    "mysql",
+    "sqlite",
+    "chrono",
+    "json",
+    "macros",
+] }

@@ -35,9 +35,13 @@ fn full_pipeline_fixture_snapshot() {
     let files = plugin.generate(&ir, &config).unwrap();
 
     assert!(
-        files.len() >= 3,
-        "Expected at least 3 files, got {}",
+        files.len() >= 2,
+        "Expected at least 2 files (schema + queries), got {}",
         files.len()
+    );
+    assert!(
+        !files.iter().any(|f| f.path.ends_with("client.ts")),
+        "client.ts should no longer be generated"
     );
 
     for file in &files {

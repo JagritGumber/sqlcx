@@ -48,9 +48,14 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version: '1.22'
-          # Caching is skipped when go.sum is absent; `go build` inside each
-          # test lazily fetches pgx (stdlib drivers need no external deps).
           cache: false
+
+      - name: Populate go.sum for the typecheck-go scaffold
+        # `go build` requires a matching go.sum. We don't commit one because
+        # resolved checksums would churn with the runner's module cache.
+        # `go mod download` writes go.sum before the Rust tests invoke go build.
+        working-directory: tests/typecheck-go
+        run: go mod download
 
       - name: cargo fmt --check
         run: cargo fmt --all -- --check

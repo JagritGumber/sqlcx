@@ -3,10 +3,12 @@
 //! body). The shared skeleton emits row/params interfaces, SQL const, and the
 //! typed `(conn, params)` signature. No client.ts, no class wrappers.
 
+pub mod placeholders;
 pub mod query_fn;
 pub mod sql_escape;
 pub mod types;
 
+pub use placeholders::rewrite_to_qmark;
 pub use query_fn::{
     BodyCtx, TsDriverShape, generate_driver_files, generate_queries_file, generate_query_function,
 };

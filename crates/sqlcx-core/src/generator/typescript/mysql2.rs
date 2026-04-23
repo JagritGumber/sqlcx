@@ -4,7 +4,7 @@
 
 use crate::error::Result;
 use crate::generator::typescript::common::{
-    BodyCtx, TsDriverShape, TsTypeMap, generate_driver_files,
+    BodyCtx, TsDriverShape, TsTypeMap, generate_driver_files, rewrite_to_qmark,
 };
 use crate::generator::{DriverGenerator, GeneratedFile};
 use crate::ir::{QueryCommand, SqlcxIR};
@@ -16,25 +16,6 @@ impl TsTypeMap for Mysql2Generator {
     fn binary_ty(&self) -> &'static str {
         "Buffer"
     }
-}
-
-fn to_mysql_params(sql: &str) -> (String, Vec<u32>) {
-    let mut result = String::with_capacity(sql.len());
-    let mut indices = Vec::new();
-    let mut chars = sql.chars().peekable();
-    while let Some(c) = chars.next() {
-        if c == '$' && chars.peek().is_some_and(|ch| ch.is_ascii_digit()) {
-            let mut num_str = String::new();
-            while chars.peek().is_some_and(|ch| ch.is_ascii_digit()) {
-                num_str.push(chars.next().unwrap());
-            }
-            result.push('?');
-            indices.push(num_str.parse::<u32>().unwrap_or(0));
-        } else {
-            result.push(c);
-        }
-    }
-    (result, indices)
 }
 
 impl TsDriverShape for Mysql2Generator {
@@ -51,7 +32,7 @@ impl TsDriverShape for Mysql2Generator {
         true
     }
     fn rewrite_placeholders(&self, sql: &str) -> (String, Vec<u32>) {
-        to_mysql_params(sql)
+        rewrite_to_qmark(sql)
     }
     fn render_body(&self, ctx: &BodyCtx<'_>) -> (String, String) {
         let (sc, rt, va) = (ctx.sql_const, ctx.row_type, ctx.values_arg);
@@ -118,12 +99,5 @@ mod tests {
         assert!(content.contains("pool.execute"));
         assert!(!content.contains("$1"));
         insta::assert_snapshot!("mysql2_queries", content);
-    }
-
-    #[test]
-    fn rewrites_dollar_n_to_question_mark() {
-        let (sql, idx) = to_mysql_params("WHERE a = $1 AND b = $2 OR a = $1");
-        assert_eq!(sql, "WHERE a = ? AND b = ? OR a = ?");
-        assert_eq!(idx, vec![1, 2, 1]);
     }
 }

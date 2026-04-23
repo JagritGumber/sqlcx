@@ -12,4 +12,4 @@ pub use query_fn::{
     PyBodyCtx, PyDriverShape, generate_driver_files, generate_queries_file, generate_query_function,
 };
 pub use sql_escape::escape_sql;
-pub use types::{DefaultPyTypeMap, PyTypeMap, generate_params_class, generate_row_class, py_type};
+pub use types::{PyTypeMap, generate_params_class, generate_row_class, py_type};

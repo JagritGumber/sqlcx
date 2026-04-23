@@ -4,7 +4,7 @@
 
 use crate::error::Result;
 use crate::generator::typescript::common::{
-    BodyCtx, TsDriverShape, TsTypeMap, generate_driver_files,
+    BodyCtx, TsDriverShape, TsTypeMap, generate_driver_files, rewrite_to_qmark,
 };
 use crate::generator::{DriverGenerator, GeneratedFile};
 use crate::ir::{QueryCommand, SqlcxIR};
@@ -28,25 +28,6 @@ impl TsTypeMap for BetterSqlite3Generator {
     }
 }
 
-fn to_sqlite_params(sql: &str) -> (String, Vec<u32>) {
-    let mut result = String::with_capacity(sql.len());
-    let mut indices = Vec::new();
-    let mut chars = sql.chars().peekable();
-    while let Some(c) = chars.next() {
-        if c == '$' && chars.peek().is_some_and(|ch| ch.is_ascii_digit()) {
-            let mut num_str = String::new();
-            while chars.peek().is_some_and(|ch| ch.is_ascii_digit()) {
-                num_str.push(chars.next().unwrap());
-            }
-            result.push('?');
-            indices.push(num_str.parse::<u32>().unwrap_or(0));
-        } else {
-            result.push(c);
-        }
-    }
-    (result, indices)
-}
-
 impl TsDriverShape for BetterSqlite3Generator {
     fn imports(&self) -> String {
         "import type Database from \"better-sqlite3\";".to_string()
@@ -61,7 +42,7 @@ impl TsDriverShape for BetterSqlite3Generator {
         false
     }
     fn rewrite_placeholders(&self, sql: &str) -> (String, Vec<u32>) {
-        to_sqlite_params(sql)
+        rewrite_to_qmark(sql)
     }
     fn render_body(&self, ctx: &BodyCtx<'_>) -> (String, String) {
         let (sc, rt, vs) = (ctx.sql_const, ctx.row_type, ctx.values_spread);
@@ -121,12 +102,5 @@ mod tests {
         assert!(content.contains("Database.Database"));
         assert!(content.contains("db.prepare"));
         insta::assert_snapshot!("better_sqlite3_queries", content);
-    }
-
-    #[test]
-    fn rewrites_dollar_n_to_question_mark() {
-        let (sql, idx) = to_sqlite_params("WHERE a = $1 AND b = $2");
-        assert_eq!(sql, "WHERE a = ? AND b = ?");
-        assert_eq!(idx, vec![1, 2]);
     }
 }

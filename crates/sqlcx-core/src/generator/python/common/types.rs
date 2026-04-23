@@ -1,9 +1,9 @@
 // SQL→Python type mapping and @dataclass row/params generation.
 //
-// The `PyTypeMap` trait captures per-driver divergence. psycopg and
-// asyncpg use the default mapping (Postgres types through to Python
-// types). sqlite3 will override Boolean→int (SQLite stores booleans
-// as 0/1), Date→str, Json→str (SQLite stores these as text).
+// The `PyTypeMap` trait captures per-driver divergence. psycopg, asyncpg,
+// and mysql-connector use the default mapping (bool/int/datetime/bytes).
+// sqlite3 overrides Boolean→int (SQLite stores booleans as 0/1), Date→str,
+// and Json→str (SQLite stores these as text).
 
 use crate::ir::{QueryDef, SqlType, SqlTypeCategory};
 use crate::utils::pascal_case;
@@ -34,10 +34,6 @@ pub trait PyTypeMap {
         "Any"
     }
 }
-
-/// Default map used by psycopg and asyncpg (Postgres → idiomatic Python).
-pub struct DefaultPyTypeMap;
-impl PyTypeMap for DefaultPyTypeMap {}
 
 pub fn py_type<M: PyTypeMap + ?Sized>(map: &M, sql_type: &SqlType) -> String {
     if let Some(elem) = &sql_type.element_type {

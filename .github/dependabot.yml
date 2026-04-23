@@ -33,3 +33,10 @@ updates:
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 3
+    # This scaffold exists to validate the `zod/v3` codegen path. Major
+    # version bumps of zod here defeat the scaffold's purpose (a v4 bump
+    # would type-check because `tsc --noEmit` only validates imports, not
+    # the runtime v3 surface we emit).
+    ignore:
+      - dependency-name: "zod"
+        update-types: ["version-update:semver-major"]

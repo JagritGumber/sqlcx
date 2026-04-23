@@ -40,7 +40,7 @@ jobs:
         run: npm install -g typescript@5
 
       - name: Install Python (for py_compile e2e tests)
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: '3.12'
 

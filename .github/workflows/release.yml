@@ -65,7 +65,7 @@ jobs:
           npm --prefix tests/typecheck ci
           npm --prefix tests/typecheck-zod3 ci
           npm install -g typescript@5
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
       - uses: actions/setup-go@v5

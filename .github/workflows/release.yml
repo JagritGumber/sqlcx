@@ -129,7 +129,7 @@ jobs:
             echo "Release $version" > release_body.md
           fi
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           body_path: release_body.md
           tag_name: ${{ github.ref_name }}

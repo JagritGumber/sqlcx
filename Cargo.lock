@@ -965,7 +965,7 @@ dependencies = [
 
 [[package]]
 name = "sqlcx-core"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "glob",
  "insta",
@@ -983,7 +983,7 @@ dependencies = [
 
 [[package]]
 name = "sqlcx-orm"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "clap",
  "glob",

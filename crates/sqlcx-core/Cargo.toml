@@ -3,7 +3,12 @@ name = "sqlcx-core"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme.workspace = true
 description = "SQL-first cross-language type-safe code generator — core library"
+keywords = ["sql", "codegen", "orm", "parser", "type-safe"]
+categories = ["development-tools", "database"]
 
 [features]
 default = []

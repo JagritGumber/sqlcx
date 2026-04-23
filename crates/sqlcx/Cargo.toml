@@ -3,7 +3,12 @@ name = "sqlcx-orm"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme.workspace = true
 description = "SQL-first cross-language type-safe code generator — CLI"
+keywords = ["sql", "codegen", "orm", "type-safe", "schema"]
+categories = ["development-tools", "database"]
 
 # The binary name stays `sqlcx` so `cargo install sqlcx-orm` installs a
 # binary callable as `sqlcx` — short CLI command, single brand on crates.io
@@ -19,7 +24,7 @@ migrate = ["sqlcx-core/migrate"]
 [dependencies]
 # Both path and version are required: path is used for local dev builds,
 # version is used when publishing to crates.io (path is stripped).
-sqlcx-core = { path = "../sqlcx-core", version = "0.2.0" }
+sqlcx-core = { path = "../sqlcx-core", version = "0.2.1" }
 clap = { version = "4", features = ["derive"] }
 glob = "0.3"
 schemars = "1"

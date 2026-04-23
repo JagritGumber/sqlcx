@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.1] — Crates.io metadata fix
+
+Crates were published in 0.2.0 without README, repository link, keywords, or
+categories — the crates.io listing rendered as an empty card. This release adds
+the missing metadata; no code changes.
+
+### Changed
+
+- Each crate Cargo.toml now inherits `repository`, `homepage`, and `readme`
+  from the workspace, plus declares its own `keywords` and `categories`. The
+  workspace README ships in both packages.
+
 ## [0.2.0] — Full driver parity + INNER JOIN support
 
 First release of the Rust-based sqlcx. Previous npm `sqlcx-orm@0.1.2` was
@@ -81,5 +93,6 @@ language in feature parity.
   normalized across all TypeScript drivers.
 - Pipeline cache correctly invalidates on driver/schema/overrides changes.
 
-[Unreleased]: https://github.com/JagritGumber/sqlcx/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/JagritGumber/sqlcx/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/JagritGumber/sqlcx/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/JagritGumber/sqlcx/compare/v0.1.2...v0.2.0

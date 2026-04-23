@@ -65,6 +65,18 @@ jobs:
           npm --prefix tests/typecheck ci
           npm --prefix tests/typecheck-zod3 ci
           npm install -g typescript@5
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+          cache: false
+      - name: Populate go.sum for the typecheck-go scaffold
+        # Mirror of the ci.yml step. `go build` needs go.sum covering pgx's
+        # transitive graph; `go mod tidy` walks anchor.go to write it.
+        working-directory: tests/typecheck-go
+        run: go mod tidy
       - run: cargo fmt --all -- --check
       - run: cargo build --workspace --all-targets
       - run: cargo test --workspace

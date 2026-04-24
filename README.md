@@ -289,14 +289,15 @@ Generates `ListUserEmailsRow` with only `{ id, email }` — not the full table t
 
 ### Current query boundary
 
-sqlcx currently supports single-table query shape inference for generated row types and parameter typing.
+sqlcx currently supports single-table query shape inference for generated row types and parameter typing, including qualified references to the base table.
 
 - `SELECT * FROM users`
 - `SELECT id, email FROM users`
+- `SELECT users.id, users.name AS user_name FROM users`
 - `INSERT ... VALUES (...)`
 - `UPDATE ... RETURNING id, name`
 
-Qualified select expressions and join-shaped projections such as `SELECT users.id, orgs.slug ...` are rejected for now instead of generating invalid code. That keeps the generated output sound while the multi-table IR is still intentionally narrow.
+Join-shaped projections such as `SELECT users.id, orgs.slug ...` are still rejected for now instead of generating invalid code. That keeps the generated output sound while the multi-table IR is still intentionally narrow.
 
 ### Caching
 

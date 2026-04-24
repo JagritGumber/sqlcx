@@ -8,8 +8,8 @@ use crate::error::Result;
 use crate::ir::{ColumnDef, EnumDef, QueryDef, SqlType, SqlTypeCategory, TableDef};
 use crate::parser::joins::{has_outer_join, resolve_multi_table_columns};
 use crate::parser::{
-    DatabaseParser, build_params, ensure_supported_select_expr, make_unknown_column,
-    split_column_defs, split_query_blocks,
+    DatabaseParser, build_params, resolve_single_table_select_column, split_column_defs,
+    split_query_blocks,
 };
 
 // ── Static regex patterns ────────────────────────────────────────────────────
@@ -67,9 +67,6 @@ static SELECT_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?i)^\s*SELECT
 
 static SELECT_COLS_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"(?i)SELECT\s+([\s\S]+?)\s+FROM\b").unwrap());
-
-static ALIAS_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(?i)^`?(\w+)`?\s+as\s+`?(\w+)`?$").unwrap());
 
 // -- Type mapping --------------------------------------------------------
 
@@ -351,6 +348,45 @@ fn find_from_table<'a>(sql: &str, tables: &'a [TableDef]) -> Option<&'a TableDef
     tables.iter().find(|t| t.name == table_name)
 }
 
+fn extract_table_alias<'a>(sql: &'a str, table: &TableDef) -> Option<&'a str> {
+    let lower = sql.to_lowercase();
+    let table_name = &table.name;
+    let patterns = [
+        format!("from `{}` as ", table_name),
+        format!("from `{}` ", table_name),
+        format!("from {} as ", table_name),
+        format!("from {} ", table_name),
+        format!("into `{}` as ", table_name),
+        format!("into `{}` ", table_name),
+        format!("into {} as ", table_name),
+        format!("into {} ", table_name),
+        format!("update `{}` as ", table_name),
+        format!("update `{}` ", table_name),
+        format!("update {} as ", table_name),
+        format!("update {} ", table_name),
+    ];
+
+    for pattern in patterns {
+        if let Some(idx) = lower.find(&pattern) {
+            let remainder = sql[idx + pattern.len()..].trim_start();
+            let alias = remainder
+                .split(|ch: char| ch.is_whitespace() || ch == ';' || ch == ',')
+                .next()
+                .unwrap_or("");
+            if !alias.is_empty()
+                && !matches!(
+                    alias.to_lowercase().as_str(),
+                    "where" | "join" | "order" | "group" | "limit"
+                )
+            {
+                return Some(alias);
+            }
+        }
+    }
+
+    None
+}
+
 fn resolve_return_columns(
     sql: &str,
     table: Option<&TableDef>,
@@ -380,36 +416,18 @@ fn resolve_return_columns(
     let Some(table) = table else {
         return Ok(Vec::new());
     };
+    let alias = extract_table_alias(sql, table);
+    let mut allowed_prefixes = vec![table.name.as_str()];
+    if let Some(alias) = alias {
+        allowed_prefixes.push(alias);
+    }
 
     let col_names: Vec<&str> = cols_part.split(',').map(|s| s.trim()).collect();
 
     col_names
         .iter()
         .map(|&col_expr| -> Result<ColumnDef> {
-            ensure_supported_select_expr(col_expr, source_file)?;
-            let expr_lower = col_expr.to_lowercase();
-            if let Some(alias_cap) = ALIAS_RE.captures(&expr_lower) {
-                let actual = &alias_cap[1];
-                let alias = alias_cap[2].to_string();
-                Ok(table
-                    .columns
-                    .iter()
-                    .find(|c| c.name == actual)
-                    .map(|c| {
-                        let mut col = c.clone();
-                        col.alias = Some(alias);
-                        col
-                    })
-                    .unwrap_or_else(|| make_unknown_column(actual)))
-            } else {
-                let name = expr_lower.trim_matches('`');
-                Ok(table
-                    .columns
-                    .iter()
-                    .find(|c| c.name == name)
-                    .cloned()
-                    .unwrap_or_else(|| make_unknown_column(name)))
-            }
+            resolve_single_table_select_column(col_expr, &allowed_prefixes, table, source_file)
         })
         .collect()
 }
@@ -652,5 +670,22 @@ mod tests {
             .parse_queries(sql, &tables, &enums, "q.sql")
             .unwrap_err();
         assert!(err.to_string().contains("v1.1 supports INNER JOIN only"));
+    }
+
+    #[test]
+    fn parses_qualified_single_table_select() {
+        let parser = SqliteParser::new();
+        let (tables, enums) = parser.parse_schema(SCHEMA_SQL).unwrap();
+        let sql = "-- name: ListUsersQualified :many\nSELECT users.id, users.name AS user_name FROM users;";
+        let queries = parser
+            .parse_queries(sql, &tables, &enums, "sqlite_queries/users.sql")
+            .unwrap();
+        let query = queries
+            .iter()
+            .find(|q| q.name == "ListUsersQualified")
+            .unwrap();
+        assert_eq!(query.returns.len(), 2);
+        assert_eq!(query.returns[0].name, "id");
+        assert_eq!(query.returns[1].alias.as_deref(), Some("user_name"));
     }
 }
